@@ -1,0 +1,26 @@
+# ---- Big bundled dependencies: shipped in the Release zip, not the repo ----
+# (ffmpeg/ffprobe are over GitHub's 100 MB file limit; build-release.ps1 bundles them)
+pipeline/bin/
+pipeline/libs/
+pipeline/python/
+pipeline/yt-dlp-master/
+
+# ---- Personal data: never commit ----
+playlists.txt
+downloadswithmeta/
+pipeline/newdownloads/
+pipeline/library.db
+pipeline/library.db*
+pipeline/downloaded.txt
+pipeline/unavailable.txt
+pipeline/settings.json
+pipeline/run-config.yaml
+pipeline/playlists-run.json
+pipeline/shortcut.txt
+*.log
+*.lnk
+
+# ---- Build output / caches ----
+dist/
+__pycache__/
+*.pyc
