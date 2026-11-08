@@ -1,14 +1,13 @@
 @echo off
-rem Starts the app with its own bundled Python (no install needed).
-rem After the first start, the app puts a shortcut with its icon in this
-rem folder - use that from then on.
+rem Starts phoenixmp3 with the bundled Python. The app makes a shortcut in this
+rem folder on its first start, which can be used after that.
 if not exist "%~dp0pipeline\python\pythonw.exe" (
     echo.
-    echo  This copy is missing its bundled parts ^(Python, ffmpeg, ...^).
+    echo  This copy is missing the bundled programs ^(Python, ffmpeg and so on^).
     echo.
-    echo  You probably downloaded the "Source code" zip. Instead, go to the
-    echo  project's GitHub page, open "Releases" on the right, and download
-    echo  the big .zip listed under "Assets".
+    echo  You probably downloaded the "Source code" zip. Go to the project's
+    echo  GitHub page, open Releases on the right, and download the big .zip
+    echo  under Assets instead.
     echo.
     pause
     exit /b 1

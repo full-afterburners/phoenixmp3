@@ -1,20 +1,10 @@
-"""
-writeplaylists.py - write one .m3u8 playlist file per saved YouTube playlist.
-
-    python writeplaylists.py <run-config.yaml> <playlists.json>
-
-playlists.json (written by the app) is [{"title": ..., "ids": [video ids in
-order]}]. Every song the pipeline downloads keeps its YouTube link in its
-tags (yt-dlp writes it, beets keeps it), so each video ID can be
-mapped to the finished file in the beets library.
-
-Files go in "<output folder>\\Playlists\\<playlist title>.m3u8", with paths
-relative to that file (forward slashes, UTF-8), so the playlists keep working
-when the whole output folder is copied to a player or SD card. Songs that
-aren't downloaded (unavailable on YouTube, etc.) are simply left out.
-Rewritten on every run, so they always match the playlist on YouTube.
-Needs BEETSDIR set and libs\\ on PYTHONPATH (the app does both).
-"""
+# Writes an .m3u8 file for each saved playlist into <output folder>\Playlists.
+#
+#   python writeplaylists.py <run-config.yaml> <playlists.json>
+#
+# playlists.json comes from the app: [{"title": ..., "ids": [video ids]}].
+# Songs are matched to files by the YouTube link yt-dlp stores in their tags.
+# Paths are relative so the playlists still work after copying to a player.
 import json
 import os
 import re
@@ -28,9 +18,8 @@ ID_RE = re.compile(r"(?:v=|youtu\.be/)([0-9A-Za-z_-]{11})")
 
 
 def video_id(item, path):
-    """The song's YouTube video ID. In .m4a files yt-dlp's link lands in the
-    normal comment (beets' `comments`); in MP3s ffmpeg puts it in custom
-    TXXX:purl / TXXX:comment frames instead, so read those from the file."""
+    # .m4a files have the link in the normal comment tag. In MP3s ffmpeg puts it
+    # in TXXX:purl / TXXX:comment, which beets doesn't read, so check the file.
     m = ID_RE.search(item.comments or "")
     if m:
         return m.group(1)
@@ -42,7 +31,7 @@ def video_id(item, path):
                 m = ID_RE.search(str(tags[key]))
                 if m:
                     return m.group(1)
-    except Exception:  # noqa: BLE001 - unreadable file: just leave it out
+    except Exception:
         pass
     return None
 
@@ -81,7 +70,7 @@ def main():
         target = out_dir / f"{safe_name(pl['title'])}.m3u8"
         target.write_text("\n".join(lines) + "\n", encoding="utf-8")
         missing = len(pl["ids"]) - found
-        print(f"playlist: {target.name} - {found} songs"
+        print(f"playlist: {target.name}, {found} song" + ("" if found == 1 else "s")
               + (f" ({missing} not downloaded)" if missing else ""), flush=True)
 
 

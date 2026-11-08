@@ -1,17 +1,7 @@
-"""
-squareart.py - crop embedded cover art to a centred square and shrink it.
-
-YouTube thumbnails are 16:9 (usually 1280x720); the iPod shows album art as a
-square, so un-cropped art gets letterboxed or squashed. This runs between the
-yt-dlp download and the beets import, on every .m4a and .mp3 in the given folder:
-
-    python squareart.py <folder> [size, default 500]
-
-For each file with embedded art (MP4 "covr" atom or ID3 APIC frame) it pipes the image through
-ffmpeg: centre-crop to a square, scale down to at most SIZE px, re-encode as
-JPEG. Art that is already square and small enough is left untouched.
-Needs mutagen (from libs\\) on PYTHONPATH and ffmpeg on PATH or in ..\\bin.
-"""
+# Crops the embedded cover art of every .m4a/.mp3 in a folder to a centred
+# square and shrinks it. YouTube thumbnails are 16:9 and players show art square.
+#
+#   python squareart.py <folder> [size]     (size defaults to 500 px)
 import os
 import shutil
 import subprocess
@@ -21,21 +11,18 @@ from pathlib import Path
 from mutagen.id3 import APIC, ID3, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4Cover
 
-SIZE = 500  # px; plenty for any iPod screen, ~30-50 KB per cover
-# (the app passes 300 as a 2nd argument for the "smaller cover art" setting)
-if len(sys.argv) > 2 and sys.argv[2].isdigit():
-    SIZE = int(sys.argv[2])
+SIZE = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 500
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 HERE = Path(__file__).resolve().parent
 FFMPEG = shutil.which("ffmpeg") or str(HERE / "bin" / "ffmpeg.exe")
 
-# Centre-crop to the shorter side, then scale down (never up) to SIZE.
+# Crop to the shorter side, then scale down (never up).
 VF = f"crop='min(iw,ih)':'min(iw,ih)',scale='min({SIZE},iw)':'min({SIZE},ih)'"
 
 
 def jpeg_size(data):
-    """Return (w, h) of a JPEG from its SOF marker, or None."""
+    """Width and height of a JPEG, read from its header. None if not a JPEG."""
     if data[:2] != b"\xff\xd8":
         return None
     i = 2
@@ -70,7 +57,6 @@ def needs_fix(data):
 
 
 def process_m4a(path):
-    """AAC/.m4a: cover art lives in the MP4 'covr' atom (a list of images)."""
     mp4 = MP4(path)
     covers = (mp4.tags or {}).get("covr") or []
     if not covers:
@@ -86,12 +72,9 @@ def process_m4a(path):
     return "squared"
 
 
-def process(path):
-    if path.suffix.lower() == ".m4a":
-        return process_m4a(path)
-    mp3 = path
+def process_mp3(path):
     try:
-        tags = ID3(mp3)
+        tags = ID3(path)
     except ID3NoHeaderError:
         return "no tags"
     frames = tags.getall("APIC")
@@ -100,26 +83,27 @@ def process(path):
     changed = False
     for f in frames:
         if not needs_fix(f.data):
-            continue  # already square and small
+            continue
         new = fix_image(f.data)
         tags.delall(f"APIC:{f.desc}")
-        tags.add(APIC(encoding=f.encoding, mime="image/jpeg", type=f.type,
-                      desc=f.desc, data=new))
+        tags.add(APIC(encoding=f.encoding, mime="image/jpeg", type=f.type, desc=f.desc, data=new))
         changed = True
     if not changed:
         return "ok already"
-    tags.save(mp3, v2_version=3)  # iPod Nano wants ID3v2.3
+    tags.save(path, v2_version=3)  # older iPods need ID3v2.3
     return "squared"
+
+
+def process(path):
+    return process_m4a(path) if path.suffix.lower() == ".m4a" else process_mp3(path)
 
 
 def main():
     folder = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "newdownloads"
-    files = sorted(p for p in folder.iterdir()
-                   if p.suffix.lower() in (".m4a", ".mp3"))
-    for f in files:
+    for f in sorted(p for p in folder.iterdir() if p.suffix.lower() in (".m4a", ".mp3")):
         try:
             result = process(f)
-        except Exception as e:  # noqa: BLE001 - never block the pipeline
+        except Exception as e:
             result = f"skipped ({e})"
         print(f"  art: {result} - {f.name}", flush=True)
 

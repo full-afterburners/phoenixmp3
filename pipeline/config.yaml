@@ -1,48 +1,34 @@
-# beets config for the yt-dlp -> iPod Nano pipeline
-# Library + final tagged files live in downloadswithmeta.
-# Paths are relative to THIS file's folder (pipeline\), so the whole folder can
-# be moved or shared. The app overrides `directory` with the folder chosen in
-# its Settings (via run-config.yaml).
+# beets config. Paths are relative to this folder. The app overrides directory,
+# paths and plugins from its settings (see run-config.yaml).
 directory: ../downloadswithmeta
-library:   library.db
+library: library.db
 
-# --- Old-iPod compatibility -------------------------------------------------
-# iPod Nano (esp. 1st-3rd gen) needs ID3v2.3 tags, NOT v2.4.
+# Older iPods can't read ID3v2.4.
 id3v23: yes
 
-# --- Import behaviour -------------------------------------------------------
 import:
-  move: yes             # move files out of newdownloads into the library
-  write: yes            # write tags to the files
-  quiet: yes            # fully automatic, no prompts
-  quiet_fallback: asis  # no confident match? keep yt-dlp's tags instead of skipping
+  move: yes
+  write: yes
+  quiet: yes
+  quiet_fallback: asis   # keep YouTube's tags when there's no confident match
   resume: no
   log: import.log
 
-# --- File layout ------------------------------------------------------------
-# Flat "Artist - Title.m4a" (every track is an individual single).
 paths:
   singleton: $artist - $title
 
-# --- Plugins ----------------------------------------------------------------
-# musicbrainz = the MusicBrainz lookup itself. In beets 2.x this is a plugin and
-#               MUST be listed, or chroma's fingerprint hits produce no candidates
-#               and every song silently falls back to as-is.
-# chroma      = acoustic fingerprint matching (handles garbage YouTube titles)
-# ftintitle   = move "feat. X" out of the title into the artist field
-# Cover art = the YouTube thumbnail yt-dlp already embeds; beets preserves it.
+# musicbrainz has to be listed in beets 2.x, otherwise chroma finds matches but
+# nothing gets looked up and every song ends up as-is.
+# ftintitle moves "feat. X" from the artist into the title.
 plugins: musicbrainz chroma ftintitle
 
 chroma:
   auto: yes
 
-# Fresh YouTube files have no "data source", which beets counts as a mismatch
-# and adds 0.11 to every candidate's distance, pushing even perfect matches
-# past strong_rec_thresh. MusicBrainz is our only source, so the penalty is
-# pointless.
+# Downloaded files have no data source set, which beets treats as a mismatch and
+# penalises, so even perfect matches failed the threshold below.
 musicbrainz:
   data_source_mismatch_penalty: 0.0
 
-# Be slightly more willing to auto-accept a match before falling back to asis.
 match:
   strong_rec_thresh: 0.10

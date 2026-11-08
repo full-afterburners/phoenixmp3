@@ -1,74 +1,57 @@
-# 🎵 phoenixmp3
+# phoenixmp3
 
-Turn YouTube and YouTube Music links into properly tagged music files for your
-iPod, MP3 player, car stereo or phone. It handles single songs, whole albums and
-playlists, and fills in artist, album, year and square cover art automatically.
+I made this to get my YouTube Music playlists onto my old iPod nano. You paste in a
+YouTube link (a song, an album or a whole playlist) and it downloads the audio and
+sorts out the artist, album, year and cover art so it looks right on your player.
+Works for iPods, MP3 players, car stereos, phones, whatever.
 
-**Windows 10/11 only. Nothing to install.**
+It only runs on Windows 10 or 11. You don't need to install anything.
 
----
+## Getting it
 
-## Download
+Go to the Releases section on the right side of this page, open the newest one, and
+download the big zip file under Assets (around 150 MB). Don't use the green "Code"
+button or the "Source code" zips. Those don't have the stuff the app needs to run.
 
-1. On this page, find **Releases** on the right-hand side and click the latest one.
-2. Under **Assets**, download the big **`.zip`** file (about 200 MB).
-   > ⚠️ Not "Code → Download ZIP" or "Source code". Those are missing the parts the app needs.
+Before you unzip it, right-click the zip, go to Properties and tick "Unblock" at the
+bottom. Otherwise Windows complains about every file. Then right-click it again,
+choose Extract All, and put the folder wherever you want to keep it.
 
-## Set it up (once)
+Open the folder and double-click START HERE.bat. If Windows shows a blue "Windows
+protected your PC" box, click "More info" and then "Run anyway". It just does that
+for anything that isn't from a big company. The app will open and make a shortcut in
+the same folder, so after the first time you can just use that (or copy it to your
+desktop).
 
-1. **Unblock the zip:** right-click the downloaded `.zip` → **Properties** → tick
-   **Unblock** (bottom right) → **OK**. This stops Windows from nagging about every file.
-2. **Extract it:** right-click → **Extract All…** and pick a folder to keep it in,
-   e.g. your Music folder or Desktop. Don't run it from inside the zip.
-3. Open the extracted folder and double-click **`START HERE.bat`**.
-   - If a blue **"Windows protected your PC"** box appears: click **More info** →
-     **Run anyway**. It's because the app isn't from a big company, not because
-     anything is wrong.
-4. The app opens, and a **shortcut with the app's icon** appears in the same folder.
-   Use that shortcut from now on (you can copy it to your Desktop).
+## Using it
 
-## Use it
+Paste a link in the box at the top, hit Preview if you want to see what's in it, then
+hit Download. Your songs go into the downloadswithmeta folder.
 
-**One link:** paste a YouTube or YouTube Music link (a song, an album, or a playlist),
-click **Preview** to see what's in it, then **⬇ Download**.
+If there are playlists you keep adding songs to, click "List of checked playlists",
+put one playlist link per line in the file that opens, and save it. After that,
+"Check playlists" only grabs the songs you don't already have. The playlists need to
+be public or unlisted on YouTube, private ones won't work.
 
-**Playlists you keep adding to:** click **List of checked playlists**, paste one
-playlist link per line, save the file. From then on, **🔄 Check playlists** downloads
-only the songs you don't have yet. Playlists must be **public or unlisted** on YouTube.
+The Settings button lets you pick the format and how the files are laid out. AAC is
+the default and is best for iPods and phones. If you're putting music on a car stereo,
+a USB stick or a cheap MP3 player, switch it to MP3 and pick the Artist/Album folders
+option, since those usually browse by folder. If you're not sure, MP3 plays on
+everything. Settings only apply to new downloads.
 
-Your songs end up in the **`downloadswithmeta`** folder (you can change this in
-Settings). Copy them to your device the way you normally would.
+## If it stops working
 
-## Settings for your device (⚙ Settings)
+YouTube changes stuff every now and then, which breaks downloading. When that happens
+grab the newest release from this page. To keep your music when you update, move the
+downloadswithmeta folder, playlists.txt and pipeline\downloaded.txt from the old
+folder into the new one.
 
-| Your device | Format | Folder layout | Also turn on |
-|---|---|---|---|
-| iPod | AAC (.m4a) | One folder | |
-| Phone, or PC music player | AAC (.m4a) | either | Playlist files |
-| Car stereo / USB stick | **MP3** | **Artist\Album folders** | Smaller cover art |
-| Cheap MP3 player | **MP3** | **Artist\Album folders** | Smaller cover art |
-| Rockbox player | AAC or MP3 | Artist\Album folders | Playlist files, Volume levelling |
+Some songs just won't download because they're blocked in your country or got taken
+down. The app skips those on its own.
 
-If you're not sure: **MP3** plays on literally everything. Settings are remembered
-and apply to new downloads.
+If something else goes wrong, send me the file pipeline\last-run.log and I'll take a
+look.
 
-## If something goes wrong
-
-- **Downloads suddenly stop working:** YouTube changes things every so often. Get the
-  newest version from the Releases page (see "Updating" below).
-- **"Unavailable" songs:** some songs are blocked in your country or removed by the
-  label. The app skips them automatically.
-- **Something else:** the full details of the last run are in `pipeline\last-run.log`.
-  Send that file to whoever gave you the app.
-
-## Updating
-
-Download and extract the new zip as above, then move these from your old folder into
-the new one: the **`downloadswithmeta`** folder (your music), **`playlists.txt`**, and
-**`pipeline\downloaded.txt`** (so it remembers what you already have).
-
----
-
-Please only download music you have the right to, for your own personal use.
-This app bundles free open-source software (yt-dlp, beets, FFmpeg, Python and more).
-See `THIRD-PARTY-NOTICES.txt` in the download.
+Only download stuff you're allowed to, for your own use. This is built on a bunch of
+free open source tools (yt-dlp, beets, FFmpeg, Python and others), there's a list in
+THIRD-PARTY-NOTICES.txt in the download.

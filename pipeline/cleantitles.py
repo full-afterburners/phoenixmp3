@@ -1,34 +1,18 @@
-"""
-cleantitles.py - tidy YouTube-style titles/artists before beets sees them.
-
-Official-channel uploads come through with titles like
-    "Caamp - Moonsmoke (Official Audio)"     artist: "Caamp"
-which (a) stops beets from confidently matching MusicBrainz, and (b) looks
-bad on the iPod if no match is found. This runs between squareart.py and the
-beets import, on every .m4a / .mp3 in the given folder:
-
-    python cleantitles.py <folder>
-
-It only ever removes things, and only these:
-  * a leading "<artist> - " from the title (when it repeats the artist tag)
-  * video junk in brackets: (Official Audio), [Official Music Video],
-    (Lyric Video), (Lyrics), (Visualizer), (Audio), (HD) ...
-  * a featured artist from the ARTIST tag when the title already says
-    "(feat. X)" - the title keeps the credit (MusicBrainz/iTunes convention)
-  * " - Topic" / "VEVO" from the end of the artist (YouTube channel names)
-  * the month+day from yt-dlp's "20190726"-style date (beets would read the
-    whole thing as the year 20190726), leaving "2019"
-If cleaning would leave a title empty, the file is left alone.
-Needs mutagen (from libs\\) on PYTHONPATH.
-"""
+# Tidies YouTube-style tags before beets sees them, for every .m4a/.mp3 in a folder.
+#
+#   python cleantitles.py <folder>
+#
+# "Caamp - Moonsmoke (Official Audio)" by "Caamp" becomes "Moonsmoke". It also
+# drops "(Lyric Video)" and similar, " - Topic"/"VEVO" from channel names,
+# featured artists from the artist tag when the title already credits them,
+# and the month/day from yt-dlp's 20190726-style dates. It only removes things,
+# and real version info like "(Live)" or "(Remix)" is left alone.
 import re
 import sys
 from pathlib import Path
 
 import mutagen
 
-# Bracketed video/upload junk. Conservative on purpose: real version info like
-# "(Remastered)", "(Live)", "(Acoustic)", "(Tiborg Remix)" is never touched.
 JUNK = re.compile(
     r"\s*[\(\[]\s*(?:"
     r"(?:official\s+)?(?:music\s+|lyrics?\s+)?(?:audio|video|visuali[sz]er)"
@@ -36,9 +20,9 @@ JUNK = re.compile(
     r")\s*[\)\]]",
     re.IGNORECASE,
 )
-SEP = r"\s*[-–—:|]\s*"  # -, en dash, em dash, colon, pipe
+SEP = r"\s*[-–—:|]\s*"
 
-# "(feat. X)", "[ft. X & Y]", "(featuring X)" or a trailing "feat. X" in the title.
+# "(feat. X)", "[ft. X & Y]", "(featuring X)" or a trailing "feat. X"
 FEAT = re.compile(
     r"\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring)\s+([^\)\]]+?)\s*[\)\]]"
     r"|\s+(?:feat\.?|ft\.?|featuring)\s+(.+)$",
@@ -47,20 +31,16 @@ FEAT = re.compile(
 
 
 def unfeat_artist(title, artist):
-    """Featured artists belong in the title, not the artist (the MusicBrainz /
-    iTunes convention). YouTube often lists them in both:
-        title "Spotless (feat. The Lumineers)", artist "Zach Bryan, The Lumineers"
-    -> artist "Zach Bryan". The title keeps its feat. credit, so nothing is lost,
-    beets can match, and the song files under "Zach Bryan" on the iPod instead
-    of a separate "Zach Bryan, The Lumineers" artist."""
+    """If the title says "(feat. X)", take X out of the artist tag.
+    "Spotless (feat. The Lumineers)" by "Zach Bryan, The Lumineers" ends up
+    under "Zach Bryan", which is how MusicBrainz lists it."""
     m = FEAT.search(title)
     if not m:
         return artist
     names = re.split(r"\s*(?:,|&|\band\b)\s*", (m.group(1) or m.group(2)).strip())
     a = artist
     for name in filter(None, names):
-        # Only remove a name that's a separate credit after a separator
-        # (", X" / " & X" / " and X"), never part of a band name.
+        # Only when it's a separate credit after a comma/&/and.
         a = re.sub(r"\s*(?:,|&|\band\b)\s*" + re.escape(name) + r"(?=\s*(?:,|&|\band\b|$))",
                    "", a, flags=re.IGNORECASE)
     a = a.strip(" ,&")
@@ -69,14 +49,13 @@ def unfeat_artist(title, artist):
 
 def clean_artist(artist):
     a = re.sub(r"\s*-\s*Topic$", "", artist, flags=re.IGNORECASE)
-    a = re.sub(r"\s*VEVO$", "", a)  # case-sensitive: "CaampVEVO", not "Vevo"
+    a = re.sub(r"\s*VEVO$", "", a)
     return a.strip() or artist
 
 
 def clean_title(title, artist):
     t = JUNK.sub("", title).strip()
-    # Drop a leading "Artist - " that just repeats the artist tag. Also try
-    # the first of several artists ("A, B & C" -> "A").
+    # Drop a leading "Artist - ". Also try just the first of several artists.
     names = {artist, re.split(r"\s*(?:,|&|\bfeat\.?|\bft\.?|\bx\b)\s*", artist)[0]}
     for name in sorted((n for n in names if n), key=len, reverse=True):
         m = re.match(re.escape(name) + SEP, t, flags=re.IGNORECASE)
@@ -108,7 +87,7 @@ def process(path):
     if new_date != date:
         f["date"] = [new_date]
     if path.suffix.lower() == ".mp3":
-        f.save(v2_version=3)  # iPod Nano wants ID3v2.3
+        f.save(v2_version=3)
     else:
         f.save()
     changes = [f'"{title}" -> "{new_title}"'] if new_title != title else []
@@ -126,7 +105,7 @@ def main():
             continue
         try:
             result = process(p)
-        except Exception as e:  # noqa: BLE001 - never block the pipeline
+        except Exception as e:
             result = f"skipped ({e})"
         if result != "ok":
             print(f"  title: {result} - {p.name}", flush=True)

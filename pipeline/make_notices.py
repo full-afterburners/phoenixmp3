@@ -1,12 +1,7 @@
-"""
-make_notices.py - generate THIRD-PARTY-NOTICES.txt for the release zip.
-
-    python make_notices.py <output file>
-
-Python libraries are listed from their own package metadata in libs\ (each
-package's full licence text also ships inside libs\<name>.dist-info). The
-bundled programs (Python, FFmpeg, Deno, fpcalc, yt-dlp) are described below.
-"""
+# Writes THIRD-PARTY-NOTICES.txt for the release zip. The Python libraries are
+# read from their own metadata in libs\.
+#
+#   python make_notices.py <output file>
 import sys
 from email.parser import Parser
 from pathlib import Path
@@ -23,21 +18,20 @@ Python 3.11.9 (pipeline\\python) - Python Software Foundation License.
 yt-dlp (pipeline\\yt-dlp-master) - The Unlicense (public domain).
     https://github.com/yt-dlp/yt-dlp
 
-FFmpeg / ffprobe (pipeline\\bin) - GNU General Public License v3 (this build
-    is configured with --enable-gpl --enable-version3). Windows "essentials"
-    build by gyan.dev: https://www.gyan.dev/ffmpeg/builds/
+FFmpeg / ffprobe (pipeline\\bin) - GNU General Public License v3 (built with
+    --enable-gpl --enable-version3). Windows "essentials" build by gyan.dev:
+    https://www.gyan.dev/ffmpeg/builds/
     FFmpeg source code: https://ffmpeg.org/download.html#get-sources
-    These binaries are unmodified.
+    The binaries are unmodified.
 
 Deno (pipeline\\bin\\deno.exe) - MIT License. https://deno.com/
-    Used by yt-dlp to solve YouTube's JavaScript challenges.
 
-fpcalc / Chromaprint (pipeline\\bin\\fpcalc.exe) - Chromaprint is MIT
-    licensed; the fpcalc binary includes FFmpeg libraries (LGPL 2.1).
+fpcalc / Chromaprint (pipeline\\bin\\fpcalc.exe) - Chromaprint is MIT licensed,
+    the fpcalc binary includes FFmpeg libraries (LGPL 2.1).
     https://acoustid.org/chromaprint
 
-Online services used: MusicBrainz (https://musicbrainz.org/) and AcoustID
-(https://acoustid.org/) for song identification, and YouTube for audio.
+Online services used: MusicBrainz (https://musicbrainz.org/), AcoustID
+(https://acoustid.org/) and YouTube.
 """
 
 
@@ -45,13 +39,13 @@ def license_of(meta):
     lic = (meta.get("License-Expression") or "").strip()
     if not lic:
         lic = (meta.get("License") or "").strip()
-        if "\n" in lic or len(lic) > 60:  # some packages paste the whole text here
+        if "\n" in lic or len(lic) > 60:  # some packages put the whole licence here
             lic = ""
     if not lic:
         cls = [c.split("::")[-1].strip() for c in meta.get_all("Classifier") or []
                if c.startswith("License ::")]
         lic = ", ".join(cls)
-    return lic or "see licence file in its .dist-info folder"
+    return lic or "see the licence file in its .dist-info folder"
 
 
 def main():
@@ -63,9 +57,8 @@ def main():
                     + (f"\n    {meta['Home-page']}" if meta.get("Home-page") else ""))
     text = ("Third-party software included in this download\n"
             "==============================================\n\n"
-            "This app is a front-end that bundles the following open-source software.\n"
-            "Each keeps its own licence; full licence texts are included in the\n"
-            "folders named below.\n\n"
+            "phoenixmp3 bundles the open source software below. Each keeps its own\n"
+            "licence, and the full licence texts are in the folders listed.\n\n"
             + PROGRAMS +
             "\nPython libraries (pipeline\\libs)\n"
             "--------------------------------\n"
