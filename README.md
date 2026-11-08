@@ -1,4 +1,4 @@
-# 🎵 phoenixmp3
+#  phoenixmp3
 
 Turn YouTube and YouTube Music links into properly tagged music files for your
 iPod, MP3 player, car stereo or phone. It handles single songs, whole albums and
@@ -12,7 +12,7 @@ playlists, and fills in artist, album, year and square cover art automatically.
 
 1. On this page, find **Releases** on the right-hand side and click the latest one.
 2. Under **Assets**, download the big **`.zip`** file (about 200 MB).
-   > ⚠️ Not "Code → Download ZIP" or "Source code". Those are missing the parts the app needs.
+   >  Not "Code → Download ZIP" or "Source code". Those are missing the parts the app needs.
 
 ## Set it up (once)
 
@@ -33,7 +33,7 @@ playlists, and fills in artist, album, year and square cover art automatically.
 click **Preview** to see what's in it, then **⬇ Download**.
 
 **Playlists you keep adding to:** click **List of checked playlists**, paste one
-playlist link per line, save the file. From then on, **🔄 Check playlists** downloads
+playlist link per line, save the file. From then on, ** Check playlists** downloads
 only the songs you don't have yet. Playlists must be **public or unlisted** on YouTube.
 
 Your songs end up in the **`downloadswithmeta`** folder (you can change this in
