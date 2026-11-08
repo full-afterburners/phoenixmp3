@@ -39,7 +39,7 @@ only the songs you don't have yet. Playlists must be **public or unlisted** on Y
 Your songs end up in the **`downloadswithmeta`** folder (you can change this in
 Settings). Copy them to your device the way you normally would.
 
-## Settings for your device (⚙ Settings)
+## Settings for your device ( Settings)
 
 | Your device | Format | Folder layout | Also turn on |
 |---|---|---|---|
