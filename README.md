@@ -30,7 +30,7 @@ playlists, and fills in artist, album, year and square cover art automatically.
 ## Use it
 
 **One link:** paste a YouTube or YouTube Music link (a song, an album, or a playlist),
-click **Preview** to see what's in it, then **⬇ Download**.
+click **Preview** to see what's in it, then ** Download**.
 
 **Playlists you keep adding to:** click **List of checked playlists**, paste one
 playlist link per line, save the file. From then on, ** Check playlists** downloads
