@@ -3,6 +3,7 @@
 #
 #   python squareart.py <folder> [size]     (size defaults to 500 px)
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,10 +40,35 @@ def jpeg_size(data):
     return None
 
 
+def letterbox(data):
+    """Older videos only have 4:3 thumbnails, which YouTube makes by adding black
+    bars above and below the 16:9 frame. Returns an ffmpeg crop that removes the
+    bars, or "" if there aren't any. Only cuts when the non-black area is exactly
+    that 16:9 band, so dark covers don't lose their edges."""
+    size = jpeg_size(data)
+    if not size or abs(size[0] / size[1] - 4 / 3) > 0.02:
+        return ""
+    w, h = size
+    p = subprocess.run(
+        # skip=0: cropdetect ignores the first 2 frames by default, and an image only has one
+        [FFMPEG, "-hide_banner", "-i", "pipe:0", "-vf", "cropdetect=limit=24:round=2:skip=0",
+         "-frames:v", "1", "-f", "null", "-"],
+        input=data, capture_output=True, creationflags=NO_WINDOW,
+    )
+    found = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", p.stderr.decode(errors="replace"))
+    if not found:
+        return ""
+    cw, ch, cx, cy = map(int, found[-1])
+    band = round(w * 9 / 16)
+    if cw >= w - 4 and abs(ch - band) <= 6 and abs(cy - (h - band) / 2) <= 6:
+        return f"crop={w}:{band}:0:{(h - band) // 2},"
+    return ""
+
+
 def fix_image(data):
     p = subprocess.run(
         [FFMPEG, "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
-         "-vf", VF, "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "3",
+         "-vf", letterbox(data) + VF, "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "3",
          "-f", "image2pipe", "pipe:1"],
         input=data, capture_output=True, creationflags=NO_WINDOW,
     )

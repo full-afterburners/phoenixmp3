@@ -26,6 +26,8 @@ New-Item -ItemType Directory -Force -Path $Raw, $Final | Out-Null
 $env:PATH             = "$Bin;$env:PATH"   # ffmpeg, deno, fpcalc
 $env:PYTHONPATH       = $Libs
 $env:PYTHONNOUSERSITE = "1"
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8       = "1"
 $env:BEETSDIR         = $Pipeline
 $env:FPCALC           = Join-Path $Bin "fpcalc.exe"
 $env:PIP_USER         = "0"

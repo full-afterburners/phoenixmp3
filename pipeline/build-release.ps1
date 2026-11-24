@@ -36,7 +36,7 @@ Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "READ ME.txt")
 
 # Only these files from pipeline\, so nothing personal gets copied.
 $Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.py",
-        "writeplaylists.py", "make_notices.py", "get-music.ps1", "config.yaml",
+        "writeplaylists.py", "findcopy.py", "make_notices.py", "get-music.ps1", "config.yaml",
         "icon.ico", "README.md"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
 
@@ -48,8 +48,8 @@ foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
 & $Py (Join-Path $Pipeline "make_notices.py") (Join-Path $Stage "THIRD-PARTY-NOTICES.txt")
 
 # Check nothing personal made it in.
-$personal = "library.db", "downloaded.txt", "unavailable.txt", "settings.json", "run-config.yaml",
-            "playlists.txt", "playlists-run.json", "shortcut.txt", "last-run.log", "import.log"
+$personal = "library.db", "downloaded.txt", "unavailable.txt", "replaced.txt", "settings.json", "run-config.yaml",
+            "playlists.txt", "playlists-run.json", "findcopy-run.json", "shortcut.txt", "last-run.log", "import.log"
 $found = Get-ChildItem -Recurse -File $Stage | Where-Object { $personal -contains $_.Name -or $_.Extension -eq ".lnk" }
 if ($found) { throw "Personal files in the build: $($found.FullName -join ', ')" }
 $who  = [regex]::Escape($env:USERNAME)

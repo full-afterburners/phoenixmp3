@@ -24,6 +24,7 @@ ICON = PIPELINE / "icon.ico"
 RUNLOG = PIPELINE / "last-run.log"
 ARCHIVE = PIPELINE / "downloaded.txt"        # yt-dlp's list of already downloaded IDs
 UNAVAILABLE = PIPELINE / "unavailable.txt"   # IDs YouTube won't serve
+REPLACED = PIPELINE / "replaced.txt"         # other uploads found for those
 PLAYLISTS = MUSIC / "playlists.txt"
 SETTINGS_FILE = PIPELINE / "settings.json"
 RUN_CONFIG = PIPELINE / "run-config.yaml"    # beets config overlay, rebuilt each run
@@ -46,6 +47,7 @@ DEFAULTS = {
     "small_art": False,
     "playlist_files": False,
     "replaygain": False,
+    "pause": 10,              # seconds between songs, so YouTube doesn't block us
 }
 LAYOUTS = {
     "flat": "$artist - $title",
@@ -173,6 +175,21 @@ def record_unavailable(log_lines):
     return len(found)
 
 
+def replacements():
+    """{old id: new id} from replaced.txt. The new id is "" when no other
+    upload was found, so the song isn't searched for again."""
+    out = {}
+    try:
+        lines = REPLACED.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return out
+    for ln in lines:
+        parts = ln.split("#")[0].split()
+        if len(parts) >= 2:
+            out[parts[0]] = "" if parts[1] == "-" else parts[1]
+    return out
+
+
 # Helpers
 
 def runlog(line):
@@ -191,6 +208,11 @@ def child_env():
     env["PATH"] = str(BIN) + os.pathsep + env.get("PATH", "")
     env["PIP_USER"] = "0"
     env["PYTHONNOUSERSITE"] = "1"   # ignore packages installed elsewhere on the PC
+    # Song names can have characters the Windows console encoding can't print
+    # (yt-dlp swaps "/" in titles for a lookalike Unicode slash), which used to
+    # crash the helpers halfway through a folder.
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     return env
 
 
@@ -229,19 +251,58 @@ def strip_id(name):
     return re.sub(r"\s*\[[0-9A-Za-z_-]{11}\]$", "", name)
 
 
+def kill_tree(pid):
+    # taskkill /T also ends the ffmpeg/deno processes yt-dlp started.
+    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                   creationflags=NO_WINDOW, capture_output=True)
+
+
+def clean_raw():
+    """Delete leftovers from newdownloads: cover art from failed downloads and
+    half-finished files. A song file whose ID isn't in downloaded.txt didn't
+    finish (yt-dlp only records it once it's done), so it goes too and gets
+    downloaded again next time."""
+    if not RAW.exists():
+        return
+    done = archived_ids()
+    for p in RAW.iterdir():
+        if not p.is_file():
+            continue
+        ext = p.suffix.lower()
+        m = re.search(r"\[([0-9A-Za-z_-]{11})\]", p.name)
+        unfinished = ext in (".m4a", ".mp3") and m and m.group(1) not in done
+        if ext in (".jpg", ".webp", ".png", ".part", ".ytdl") or ".temp." in p.name or unfinished:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
+def raw_songs():
+    if not RAW.exists():
+        return []
+    return [p for p in RAW.iterdir() if p.suffix.lower() in (".m4a", ".mp3")]
+
+
 class App:
     def __init__(self, root):
         self.root = root
         self.q = queue.Queue()
         self.busy = False
+        self.proc = None        # the step currently running
+        self.stopping = False   # Stop was clicked
+        self.cut_step = False   # end the current step early (YouTube blocking)
+        self.titles = {}        # video id -> title, for error messages
+        self.songs = {}         # video id -> title, channel, length
         self.settings = load_settings()
         root.title(APP_NAME)
         try:
             root.iconbitmap(default=str(ICON))
         except tk.TclError:
             pass
-        root.geometry("680x560")
-        root.minsize(560, 460)
+        root.geometry("760x560")
+        root.minsize(700, 460)
+        root.protocol("WM_DELETE_WINDOW", self.on_close)
         pad = dict(padx=12, pady=6)
 
         top = ttk.Frame(root)
@@ -271,6 +332,9 @@ class App:
         ttk.Separator(buttons, orient="vertical").pack(side="left", fill="y", padx=12)
         self.settings_btn = ttk.Button(buttons, text="Settings", command=self.open_settings)
         self.settings_btn.pack(side="left")
+        ttk.Separator(buttons, orient="vertical").pack(side="left", fill="y", padx=12)
+        self.stop_btn = ttk.Button(buttons, text="Stop", command=self.on_stop, state="disabled")
+        self.stop_btn.pack(side="left")
         self.summary = ttk.Label(root, text=settings_summary(self.settings), foreground="#666")
         self.summary.pack(anchor="w", padx=12)
 
@@ -348,6 +412,24 @@ class App:
         small_chk.pack(anchor="w")
         sync_small()
 
+        section("Pause between songs")
+        pause = tk.IntVar(value=int(s["pause"]))
+        prow = ttk.Frame(body)
+        prow.pack(fill="x")
+        pause_label = ttk.Label(prow, width=12)
+
+        def show_pause(*_):
+            pause.set(round(float(pause.get())))
+            v = pause.get()
+            pause_label.config(text="no wait" if v == 0 else f"about {round(v * 1.5)} sec")
+        ttk.Scale(prow, from_=0, to=30, orient="horizontal", length=300, variable=pause,
+                  command=show_pause).pack(side="left")
+        pause_label.pack(side="left", padx=(8, 0))
+        show_pause()
+        ttk.Label(body, text="How long to wait after each song, so YouTube doesn't block you for "
+                  "downloading too much at once.\nBig playlists take longer, but no wait can get "
+                  "you blocked after 50 or so songs.", **hint).pack(anchor="w")
+
         section("Extras")
         ttk.Checkbutton(body, text="Write playlist files (.m3u8) for saved playlists "
                         "when you click Check playlists", variable=m3u).pack(anchor="w")
@@ -363,7 +445,7 @@ class App:
             self.settings = {
                 "format": fmt.get(), "layout": layout.get(), "output_dir": store_dir(out.get()),
                 "square_art": square.get(), "small_art": small.get(),
-                "playlist_files": m3u.get(), "replaygain": rg.get(),
+                "playlist_files": m3u.get(), "replaygain": rg.get(), "pause": pause.get(),
             }
             try:
                 save_settings(self.settings)
@@ -385,8 +467,29 @@ class App:
         state = "disabled" if busy else "normal"
         for b in (self.preview_btn, self.dl_btn, self.check_btn, self.settings_btn):
             b.config(state=state)
+        self.stop_btn.config(state="normal" if busy else "disabled")
         if status:
             self.status.config(text=status)
+
+    def on_stop(self):
+        if not self.busy or self.stopping:
+            return
+        self.stopping = True
+        self.stop_btn.config(state="disabled")
+        self.status.config(text="Stopping...")
+        if self.proc and self.proc.poll() is None:
+            kill_tree(self.proc.pid)
+
+    def on_close(self):
+        if self.busy:
+            if not messagebox.askyesno("Still working",
+                                       "A download is still running. Stop it and close?"):
+                return
+            self.stopping = True
+            if self.proc and self.proc.poll() is None:
+                kill_tree(self.proc.pid)
+            clean_raw()
+        self.root.destroy()
 
     def write_info(self, text):
         self.info.config(state="normal")
@@ -483,6 +586,9 @@ class App:
         s = dict(self.settings)
         RAW.mkdir(exist_ok=True)
         out_dir(s).mkdir(parents=True, exist_ok=True)
+        self.stopping = False
+        self.titles = {}
+        self.songs = {}
         self.set_busy(True, "Downloading...")
         self.start_runlog(f"Download: {url}  settings: {json.dumps(s)}")
         self.log_line(f"Starting: {url}")
@@ -507,13 +613,29 @@ class App:
         s = dict(self.settings)
         RAW.mkdir(exist_ok=True)
         out_dir(s).mkdir(parents=True, exist_ok=True)
+        self.stopping = False
+        self.titles = {}
+        self.songs = {}
         self.set_busy(True, f"Checking {plural(len(urls), 'playlist')}...")
         self.start_runlog(f"Check playlists: {plural(len(urls), 'playlist')}  settings: {json.dumps(s)}")
         self.write_info("Checking saved playlists...")
         self.log_line(f"Checking {plural(len(urls), 'saved playlist')}")
         threading.Thread(target=self._check_worker, args=(urls, s), daemon=True).start()
 
+    def _swap_work(self, plists):
+        """Songs in the saved playlists that YouTube won't serve: the ones not
+        searched for yet, and the other uploads found but not downloaded yet."""
+        ids = list(dict.fromkeys(i for pl in plists for i in pl["ids"]))
+        dead, have, rep = unavailable_ids(), archived_ids(), replacements()
+        look = [{"id": i, **self.songs[i]} for i in ids
+                if i in dead and i not in rep and self.songs.get(i, {}).get("title")]
+        get = [rep[i] for i in ids
+               if rep.get(i) and rep[i] not in have and rep[i] not in dead]
+        return look, get
+
     def _write_playlists(self, s, plists):
+        rep = replacements()
+        plists = [{**pl, "ids": [rep.get(i) or i for i in pl["ids"]]} for pl in plists]
         data = PIPELINE / "playlists-run.json"
         data.write_text(json.dumps(plists), encoding="utf-8")
         self.q.put(("log", "Writing playlist files"))
@@ -525,6 +647,8 @@ class App:
             have, dead = archived_ids(), unavailable_ids()
             new_ids, lines, to_get, plists = set(), [], [], []
             for url in urls:
+                if self.stopping:
+                    break
                 try:
                     data = self._lookup(url)
                 except Exception as e:
@@ -533,6 +657,11 @@ class App:
                     self.q.put(("info", "\n".join(lines)))
                     continue
                 entries = [e for e in (data.get("entries") or [data]) if e]
+                self.titles.update({e["id"]: e.get("title") for e in entries if e.get("id")})
+                self.songs.update({e["id"]: {"title": e.get("title"),
+                                             "artist": e.get("channel") or e.get("uploader"),
+                                             "duration": e.get("duration")}
+                                   for e in entries if e.get("id")})
                 plists.append({"title": data.get("title") or "Playlist",
                                "ids": [e.get("id") for e in entries if e.get("id")]})
                 fresh = [e for e in entries if e.get("id") not in have | dead]
@@ -545,23 +674,40 @@ class App:
                     new_ids.update(e.get("id") for e in fresh)
                 self.q.put(("info", "\n".join(lines)))
 
+            if self.stopping:
+                self.q.put(("stopped", None))
+                return
+            look, get = self._swap_work(plists)
+            if look or get:
+                n = len(look) + len(get)
+                lines.append(f"\n{n} unavailable on YouTube, will look for another copy")
+                self.q.put(("info", "\n".join(lines)))
             if not new_ids:
+                if raw_songs() or look or get:
+                    if raw_songs():
+                        # Songs left over from a run that was stopped or closed early.
+                        self.q.put(("log", "Nothing new, but tagging songs left from last time"))
+                    self._download_worker([], s, plists=plists)
+                    return
                 if s["playlist_files"] and plists:
                     self._write_playlists(s, plists)
                 self.q.put(("uptodate", None))
                 return
             self.q.put(("log", f"{plural(len(new_ids), 'new song')} to download"))
-            self._download_worker(to_get, s, label=plural(len(new_ids), "new song"),
-                                  plists=plists if s["playlist_files"] else None)
+            self._download_worker(to_get, s, label=plural(len(new_ids), "new song"), plists=plists)
         except Exception as e:
             self.q.put(("fatal", str(e)))
 
     def _stream(self, cmd, keep=None, show=None):
         """Run cmd. All output goes to last-run.log (and keep, if given).
         show(line) returns the text to put in the window, or None."""
+        if self.stopping:
+            return -1
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace",
                              env=child_env(), creationflags=NO_WINDOW, bufsize=1)
+        self.proc = p
+        self.cut_step = False
         for line in p.stdout:
             runlog(line)
             if keep is not None:
@@ -570,34 +716,117 @@ class App:
                 out = show(line.rstrip())
                 if out:
                     self.q.put(("log", out))
+            if self.cut_step:  # the filter decided to end this step early
+                kill_tree(p.pid)
+                break
         p.wait()
+        self.proc = None
         return p.returncode
 
     def _yt_filter(self):
-        """Reduce yt-dlp's output to one line per song plus the status bar."""
-        st = {"n": 0, "total": 0, "songs": 0}
+        """Reduce yt-dlp's output to one line per song plus the status bar.
+        Ends the download early if YouTube refuses several songs in a row."""
+        st = {"n": 0, "total": 0, "songs": 0, "refused": 0, "blocked": False, "title": ""}
         item_re = re.compile(r"\[download\] Downloading item (\d+) of (\d+)")
+        url_re = re.compile(r"Extracting URL: .*(?:v=|youtu\.be/)([0-9A-Za-z_-]{11})")
+        thumb_re = re.compile(r"Writing video thumbnail .* to: (.+)")
         dest_re = re.compile(r"\[download\] Destination: (.+)")
         pct_re = re.compile(r"\[download\]\s+([\d.]+)%")
+        sleep_re = re.compile(r"Sleeping ([\d.]+) seconds")
+        err_re = re.compile(r"^ERROR: (?:\[\w+\] ([0-9A-Za-z_-]{11}): )?(.*)")
 
         def show(line):
             if m := item_re.search(line):
                 st["n"], st["total"] = int(m.group(1)), int(m.group(2))
                 return None
+            if m := url_re.search(line):
+                st["title"] = self.titles.get(m.group(1)) or m.group(1)
+                return None
+            if m := thumb_re.search(line):
+                st["title"] = strip_id(Path(m.group(1)).stem)
+                return None
             if m := dest_re.search(line):
                 st["songs"] += 1
+                st["refused"] = 0
                 st["title"] = strip_id(Path(m.group(1)).stem)
                 where = f"{st['n']}/{st['total']}  " if st["total"] else ""
                 return f"  {where}{st['title']}"
+            if m := sleep_re.search(line):
+                self.q.put(("status", f"Waiting {round(float(m.group(1)))} sec before the next song"))
+                return None
             if m := pct_re.search(line):
                 pos = f" ({st['n']} of {st['total']})" if st["total"] else ""
-                self.q.put(("status", f"Downloading{pos}: {st.get('title', '')} {m.group(1)}%"))
+                self.q.put(("status", f"Downloading{pos}: {st['title']} {m.group(1)}%"))
                 return None
-            if line.startswith("ERROR:"):
-                return "  Failed: " + re.sub(r"^ERROR: (\[[^\]]+\] )?", "", line)
+            if m := err_re.search(line):
+                title = self.titles.get(m.group(1)) or st["title"] or m.group(1) or "a song"
+                reason = m.group(2)
+                if "403" in reason:
+                    st["refused"] += 1
+                    if st["refused"] >= 3:
+                        st["blocked"] = True
+                        self.cut_step = True
+                    return f"  Failed: {title} (YouTube refused the download)"
+                if "unavailable" in reason.lower() or "not available" in reason.lower():
+                    return f"  Failed: {title} (not available on YouTube)"
+                return f"  Failed: {title} ({reason})"
             return None
 
         return show, st
+
+    def _swap_step(self, plists, yt_download, yt, n_dead):
+        """Look for other uploads of songs YouTube won't serve and download
+        them. Returns (songs downloaded this way, songs still unavailable)."""
+        look, get = self._swap_work(plists)
+        names = {x["id"]: x["title"] for x in look}
+        n_none = 0
+        if look:
+            self.q.put(("log", f"Looking for another copy of {plural(len(look), 'unavailable song')}"))
+            data = PIPELINE / "findcopy-run.json"
+            data.write_text(json.dumps(look), encoding="utf-8")
+            done = [0]
+
+            def show(line):
+                nonlocal n_none
+                parts = line.split(" ", 3)
+                if parts[0] not in ("found", "none") or len(parts) < 2 or parts[1] not in names:
+                    return self._only_problems(line)
+                done[0] += 1
+                self.q.put(("status", f"Looking for another copy {done[0]} of {len(look)}"))
+                old = parts[1]
+                with REPLACED.open("a", encoding="utf-8") as f:
+                    if parts[0] == "found" and len(parts) == 4:
+                        f.write(f"{old} {parts[2]}  # {parts[3]}\n")
+                        get.append(parts[2])
+                        self.titles[parts[2]] = parts[3]
+                        return f"  Found another copy: {parts[3]}"
+                    f.write(f"{old} -  # no other copy found: {names[old]}\n")
+                n_none += 1
+                return f"  No other copy found: {names[old]}"
+
+            self._stream([PY, str(PIPELINE / "findcopy.py"), str(data)], show=show)
+        elif n_dead:
+            self.q.put(("log", f"  {n_dead} unavailable on YouTube, will be skipped next time"))
+            n_none = n_dead
+        if not get or self.stopping:
+            return 0, n_none
+        self.q.put(("log", f"Downloading {len(get)} other cop{'y' if len(get) == 1 else 'ies'}"))
+        st, still_dead = yt_download([f"https://music.youtube.com/watch?v={v}" for v in get])
+        yt["songs"] += st["songs"]
+        yt["blocked"] = yt["blocked"] or st["blocked"]
+        return st["songs"], n_none + still_dead
+
+    def _counter(self, label, total):
+        """Status bar count for steps 2 to 4, plus any problems in the window."""
+        n = [0]
+
+        def show(line):
+            stripped = line.strip()
+            if stripped.startswith(("art:", str(RAW))) or stripped.startswith("album:"):
+                n[0] += 1
+                self.q.put(("status", f"{label} {min(n[0], total)} of {total}"))
+            return self._only_problems(line)
+        return show
 
     @staticmethod
     def _only_problems(line):
@@ -622,42 +851,67 @@ class App:
                 fmt_args = ["-f", "bestaudio[ext=m4a]/bestaudio", "-x",
                             "--audio-format", "m4a", "--audio-quality", "160K"]
 
-            self.q.put(("log", "Step 1 of 4: downloading"))
-            ytlog = []
-            yt_show, yt = self._yt_filter()
-            self._stream([
-                PY, str(YTDLP),
-                "--ffmpeg-location", str(BIN),
-                "--remote-components", "ejs:github",
-                *fmt_args,
-                "--embed-thumbnail", "--embed-metadata", "--convert-thumbnails", "jpg",
-                "--no-overwrites", "--ignore-errors", "--newline",
-                "--download-archive", str(ARCHIVE),
-                "-o", str(RAW / "%(title)s [%(id)s].%(ext)s"),
-                *urls,
-            ], keep=ytlog, show=yt_show)
-            n_dead = record_unavailable(ytlog)
-            if n_dead:
-                self.q.put(("log", f"  {n_dead} unavailable on YouTube, will be skipped next time"))
+            pause = int(s.get("pause") or 0)
+            pause_args = (["--sleep-requests", "0.75", "--sleep-interval", str(pause),
+                           "--max-sleep-interval", str(pause * 2)] if pause else [])
 
+            def yt_download(targets):
+                ytlog = []
+                show, st = self._yt_filter()
+                self._stream([
+                    PY, str(YTDLP),
+                    "--ffmpeg-location", str(BIN),
+                    "--remote-components", "ejs:github",
+                    *fmt_args, *pause_args,
+                    "--embed-thumbnail", "--embed-metadata", "--convert-thumbnails", "jpg",
+                    "--no-overwrites", "--ignore-errors", "--newline",
+                    "--download-archive", str(ARCHIVE),
+                    "-o", str(RAW / "%(title)s [%(id)s].%(ext)s"),
+                    *targets,
+                ], keep=ytlog, show=show)
+                return st, record_unavailable(ytlog)
+
+            yt = {"songs": 0, "blocked": False}
+            n_dead = n_swapped = 0
+            if urls:
+                self.q.put(("log", "Step 1 of 4: downloading"))
+                yt, n_dead = yt_download(urls)
+                if yt["blocked"]:
+                    self.q.put(("log", "  YouTube is refusing downloads right now, so downloading "
+                                       "stopped. The songs that did download will still be tagged."))
+
+            if plists and not yt["blocked"] and not self.stopping:
+                n_swapped, n_dead = self._swap_step(plists, yt_download, yt, n_dead)
+            elif n_dead:
+                self.q.put(("log", f"  {n_dead} unavailable on YouTube, will be skipped next time"))
+            clean_raw()
+            if self.stopping:
+                self.q.put(("stopped", None))
+                return
+
+            n_files = len(raw_songs())
             self.q.put(("log", "Step 2 of 4: fixing cover art and titles"))
-            self.q.put(("status", "Fixing cover art and titles..."))
             if s["square_art"]:
                 size = "300" if s["small_art"] else "500"
                 self._stream([PY, str(PIPELINE / "squareart.py"), str(RAW), size],
-                             show=self._only_problems)
+                             show=self._counter("Fixing cover art", n_files))
             self._stream([PY, str(PIPELINE / "cleantitles.py"), str(RAW)],
                          show=self._only_problems)
+            if self.stopping:
+                self.q.put(("stopped", None))
+                return
 
-            n_files = sum(1 for p in RAW.iterdir() if p.suffix.lower() in (".m4a", ".mp3"))
             self.q.put(("log", f"Step 3 of 4: tagging {plural(n_files, 'song')}"))
-            self.q.put(("status", f"Tagging {plural(n_files, 'song')}..."))
+            self.q.put(("status", f"Tagging 0 of {n_files}"))
             # Forget songs deleted from the output folder, otherwise beets skips
             # them as "already in the library".
             self._stream([PY, str(PIPELINE / "prunelib.py"), run_cfg], show=self._only_problems)
             beets_log = []
             self._stream([PY, "-m", "beets", "-c", run_cfg, "import", "-q", "-s", str(RAW)],
-                         keep=beets_log, show=self._only_problems)
+                         keep=beets_log, show=self._counter("Tagging", n_files))
+            if self.stopping:
+                self.q.put(("stopped", None))
+                return
             n_asis = sum(1 for ln in beets_log if "Importing as-is" in ln)
             # Songs that really are already in the library get skipped by beets
             # and left in newdownloads. Report them and delete the extra copy.
@@ -675,21 +929,35 @@ class App:
                     pass
 
             self.q.put(("log", "Step 4 of 4: albums and release years"))
-            self.q.put(("status", "Looking up albums and years..."))
+            n_matched = n_files - n_asis - len(dupes)
+            self.q.put(("status", f"Albums and years 0 of {max(n_matched, 0)}"))
             album_log = []
             self._stream([PY, str(PIPELINE / "fillalbums.py"), run_cfg],
-                         keep=album_log, show=self._only_problems)
+                         keep=album_log, show=self._counter("Albums and years", max(n_matched, 0)))
             n_albums = sum(1 for ln in album_log if 'album "' in ln)
+            if self.stopping:
+                self.q.put(("stopped", None))
+                return
 
-            if plists:
+            if s["replaygain"]:
+                # beets stores the volume values for songs it couldn't match but
+                # doesn't always write them into the file. This writes anything
+                # that's in the database but missing from the files.
+                self._stream([PY, "-m", "beets", "-c", run_cfg, "write"], show=self._only_problems)
+
+            if plists and s["playlist_files"]:
                 self._write_playlists(s, plists)
+            clean_raw()
 
             parts = [f"{yt['songs']} downloaded"]
+            if yt["blocked"]:
+                parts.append("stopped early because YouTube is blocking downloads")
+            if n_swapped:
+                parts.append(f"{n_swapped} of those from another copy")
             if n_dead:
                 parts.append(f"{n_dead} unavailable")
             if dupes:
                 parts.append(f"{len(dupes)} already in library")
-            n_matched = n_files - n_asis - len(dupes)
             if n_matched > 0:
                 parts.append(f"{n_matched} matched on MusicBrainz")
             if n_asis:
@@ -697,9 +965,12 @@ class App:
             if n_albums:
                 parts.append(f"{plural(n_albums, 'album')} filled in")
             self.q.put(("log", "Summary: " + ", ".join(parts)))
-            self.q.put(("done", label))
+            self.q.put(("done", (label, yt["blocked"])))
         except Exception as e:
-            self.q.put(("fatal", str(e)))
+            if self.stopping:
+                self.q.put(("stopped", None))
+            else:
+                self.q.put(("fatal", str(e)))
 
     def drain_queue(self):
         try:
@@ -721,12 +992,21 @@ class App:
                     self.log_line("All saved playlists are up to date.")
                     self.set_busy(False, "Nothing new to download.")
                 elif kind == "done":
-                    got = f" ({payload})" if payload else ""
+                    label, blocked = payload
+                    got = f" ({label})" if label else ""
                     out = out_dir(self.settings)
                     self.log_line(f"Finished{got}. Songs are in {out}\n"
                                   f"Full details are in pipeline\\{RUNLOG.name}")
                     self.set_busy(False, f"Finished{got}.")
-                    messagebox.showinfo("Finished", f"Finished{got}.\n\nSongs are in:\n{out}")
+                    note = ("\n\nYouTube started blocking downloads partway through. "
+                            "Wait an hour or so, then run it again to get the rest. "
+                            "A longer pause between songs in Settings helps avoid this."
+                            if blocked else "")
+                    messagebox.showinfo("Finished", f"Finished{got}.\n\nSongs are in:\n{out}{note}")
+                elif kind == "stopped":
+                    self.log_line("Stopped. Songs that already finished downloading will be "
+                                  "tagged next time you run it.")
+                    self.set_busy(False, "Stopped.")
                 elif kind == "fatal":
                     self.set_busy(False, "Error.")
                     messagebox.showerror("Error", payload)

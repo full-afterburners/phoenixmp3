@@ -24,6 +24,12 @@ This is the technical side. The README in the top folder covers normal use.
 
 The app shows a short summary. Everything each step prints goes to `last-run.log`.
 
+Downloading too much at once gets you blocked by YouTube for a while (HTTP 403).
+The "pause between songs" setting spaces downloads out to avoid that, and if
+YouTube refuses 3 songs in a row the app stops downloading and tags what it got.
+Stop (or closing the window) ends a run, and anything that finished downloading
+gets tagged on the next run.
+
 ## Files
 
 Top folder:
@@ -44,6 +50,12 @@ In `pipeline\`:
   skipped. Delete a line to download that song again.
 - `unavailable.txt` lists songs YouTube won't serve, so they don't count as new.
   Delete it to retry them.
+- `replaced.txt` lists other uploads found for those songs. Labels sometimes
+  pull an upload, and YouTube Music quietly plays a different one while the
+  playlist still points at the old one. Check playlists searches YouTube Music
+  (`findcopy.py`) and only takes a result by the same artist, the same version
+  and within 10 seconds of the original length. A `-` means nothing matched.
+  Delete a line to search for that song again.
 - `library.db` is beets' database.
 - `python\`, `bin\` (ffmpeg, ffprobe, deno, fpcalc), `libs\` (beets and its
   libraries) and `yt-dlp-master\` are the bundled dependencies. The libraries are

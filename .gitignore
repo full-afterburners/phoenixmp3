@@ -12,9 +12,11 @@ pipeline/library.db
 pipeline/library.db*
 pipeline/downloaded.txt
 pipeline/unavailable.txt
+pipeline/replaced.txt
 pipeline/settings.json
 pipeline/run-config.yaml
 pipeline/playlists-run.json
+pipeline/findcopy-run.json
 pipeline/shortcut.txt
 *.log
 *.lnk
