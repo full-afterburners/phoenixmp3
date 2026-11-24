@@ -16,10 +16,17 @@ This is the technical side. The README in the top folder covers normal use.
    beets doesn't skip them as duplicates.
 5. beets fingerprints each song with fpcalc, matches it on MusicBrainz, writes the
    tags and moves it into the output folder. Songs it can't match keep YouTube's tags.
-6. `fillalbums.py` looks up each matched song on MusicBrainz. If YouTube didn't give
+6. `fixartists.py` tidies the artist of songs that kept YouTube's tags. YouTube
+   Music credits songwriters as artists too, so only the first name is kept, and
+   fan uploads titled "Artist - Title" get split into artist and title.
+7. `fillalbums.py` looks up each matched song on MusicBrainz. If YouTube didn't give
    an album it uses the earliest official studio album (or the single/EP), and it
    always sets the real release year, since YouTube's year is the upload date.
-7. With playlist files turned on, `writeplaylists.py` writes an .m3u8 for each
+8. `fillgenres.py` gives each song one broad genre from Last.fm, from the short
+   list in `genres.txt` (the mapping is in the `lastgenre` part of `config.yaml`).
+   YouTube's category ("Music") is blanked when downloading. Songs Last.fm doesn't
+   know get no genre and are tried again next run.
+9. With playlist files turned on, `writeplaylists.py` writes an .m3u8 for each
    saved playlist into `Playlists\` in the output folder.
 
 The app shows a short summary. Everything each step prints goes to `last-run.log`.
@@ -52,7 +59,7 @@ In `pipeline\`:
   Delete it to retry them.
 - `replaced.txt` lists other uploads found for those songs. Labels sometimes
   pull an upload, and YouTube Music quietly plays a different one while the
-  playlist still points at the old one. Check playlists searches YouTube Music
+  playlist still points at the old one. Update My Playlists searches YouTube Music
   (`findcopy.py`) and only takes a result by the same artist, the same version
   and within 10 seconds of the original length. A `-` means nothing matched.
   Delete a line to search for that song again.

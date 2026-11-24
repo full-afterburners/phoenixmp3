@@ -30,9 +30,9 @@ SETTINGS_FILE = PIPELINE / "settings.json"
 RUN_CONFIG = PIPELINE / "run-config.yaml"    # beets config overlay, rebuilt each run
 
 PLAYLISTS_TEMPLATE = """\
-# phoenixmp3 - saved playlists
+# phoenixmp3 - My Playlists
 # Put one YouTube / YouTube Music playlist link per line, then save this file.
-# "Check playlists" in the app downloads only the songs you don't have yet.
+# "Update My Playlists" in the app downloads only the songs you don't have yet.
 # Lines starting with # are ignored, so you can label your playlists:
 #
 # Gym
@@ -190,6 +190,17 @@ def replacements():
     return out
 
 
+def dead_note(entries, dead):
+    """"  (3 from another copy, 2 unavailable)" for a playlist summary."""
+    have, rep = archived_ids(), replacements()
+    ids = [e.get("id") for e in entries if e.get("id") in dead]
+    swapped = sum(1 for i in ids if rep.get(i) in have)
+    gone = len(ids) - swapped
+    parts = ([f"{swapped} from another copy"] if swapped else []) + \
+            ([f"{gone} unavailable"] if gone else [])
+    return f"  ({', '.join(parts)})" if parts else ""
+
+
 # Helpers
 
 def runlog(line):
@@ -300,43 +311,60 @@ class App:
             root.iconbitmap(default=str(ICON))
         except tk.TclError:
             pass
-        root.geometry("760x560")
-        root.minsize(700, 460)
+        root.geometry("760x640")
+        root.minsize(700, 540)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         pad = dict(padx=12, pady=6)
+        bold = ("Segoe UI", 9, "bold")
 
-        top = ttk.Frame(root)
-        top.pack(fill="x", **pad)
-        ttk.Label(top, text="Paste link here (video link, album link, playlist link):").pack(anchor="w")
-        row = ttk.Frame(top)
+        # One-off links
+        link_box = ttk.LabelFrame(root, labelwidget=ttk.Label(root, text="Download a link", font=bold),
+                                  padding=8)
+        link_box.pack(fill="x", **pad)
+        ttk.Label(link_box, text="Paste a song, album or playlist link:").pack(anchor="w")
+        row = ttk.Frame(link_box)
         row.pack(fill="x", pady=(2, 0))
         self.url = ttk.Entry(row)
         self.url.pack(side="left", fill="x", expand=True)
         self.url.focus()
         self.preview_btn = ttk.Button(row, text="Preview", command=self.on_preview)
         self.preview_btn.pack(side="left", padx=(6, 0))
+        self.dl_btn = ttk.Button(row, text="Download", command=self.on_download)
+        self.dl_btn.pack(side="left", padx=(6, 0))
 
-        ttk.Label(root, text="What this link points to:").pack(anchor="w", padx=12)
-        self.info = tk.Text(root, height=10, wrap="none", state="disabled")
+        # Saved playlists
+        pl_box = ttk.LabelFrame(root, labelwidget=ttk.Label(root, text="My Playlists", font=bold),
+                                padding=8)
+        pl_box.pack(fill="x", padx=12, pady=(0, 6))
+        ttk.Label(pl_box, text="Save the playlists you keep adding to, then grab just the new "
+                  "songs by clicking Update My Playlists").pack(anchor="w")
+        prow = ttk.Frame(pl_box)
+        prow.pack(fill="x", pady=(4, 0))
+        self.check_btn = ttk.Button(prow, text="Update My Playlists", command=self.on_check_playlists)
+        self.check_btn.pack(side="left")
+        ttk.Button(prow, text="Add or remove My Playlists", command=self.on_edit_list).pack(
+            side="left", padx=(6, 0))
+        self.plpreview_btn = ttk.Button(prow, text="Preview My Playlists",
+                                        command=self.on_preview_playlists)
+        self.plpreview_btn.pack(side="left", padx=(6, 0))
+        self.pl_count = ttk.Label(prow, foreground="#666")
+        self.pl_count.pack(side="right")
+        self.show_playlist_count()
+        # Refresh the count after the list is edited in Notepad.
+        root.bind("<FocusIn>", lambda e: self.show_playlist_count() if e.widget is root else None)
+
+        ttk.Label(root, text="Preview:").pack(anchor="w", padx=12)
+        self.info = tk.Text(root, height=8, wrap="none", state="disabled")
         self.info.pack(fill="both", expand=True, padx=12)
 
-        buttons = ttk.Frame(root)
-        buttons.pack(**pad)
-        self.dl_btn = ttk.Button(buttons, text="Download", command=self.on_download)
-        self.dl_btn.pack(side="left")
-        ttk.Separator(buttons, orient="vertical").pack(side="left", fill="y", padx=12)
-        self.check_btn = ttk.Button(buttons, text="Check playlists", command=self.on_check_playlists)
-        self.check_btn.pack(side="left")
-        ttk.Button(buttons, text="List of checked playlists", command=self.on_edit_list).pack(
-            side="left", padx=(6, 0))
-        ttk.Separator(buttons, orient="vertical").pack(side="left", fill="y", padx=12)
-        self.settings_btn = ttk.Button(buttons, text="Settings", command=self.open_settings)
-        self.settings_btn.pack(side="left")
-        ttk.Separator(buttons, orient="vertical").pack(side="left", fill="y", padx=12)
-        self.stop_btn = ttk.Button(buttons, text="Stop", command=self.on_stop, state="disabled")
-        self.stop_btn.pack(side="left")
-        self.summary = ttk.Label(root, text=settings_summary(self.settings), foreground="#666")
-        self.summary.pack(anchor="w", padx=12)
+        bottom = ttk.Frame(root)
+        bottom.pack(fill="x", **pad)
+        self.summary = ttk.Label(bottom, text=settings_summary(self.settings), foreground="#666")
+        self.summary.pack(side="left")
+        self.stop_btn = ttk.Button(bottom, text="Stop", command=self.on_stop, state="disabled")
+        self.stop_btn.pack(side="right")
+        self.settings_btn = ttk.Button(bottom, text="Settings", command=self.open_settings)
+        self.settings_btn.pack(side="right", padx=(0, 6))
 
         ttk.Label(root, text="Progress:").pack(anchor="w", padx=12)
         self.log = tk.Text(root, height=8, wrap="word", state="disabled", bg="#111", fg="#ddd")
@@ -431,8 +459,8 @@ class App:
                   "you blocked after 50 or so songs.", **hint).pack(anchor="w")
 
         section("Extras")
-        ttk.Checkbutton(body, text="Write playlist files (.m3u8) for saved playlists "
-                        "when you click Check playlists", variable=m3u).pack(anchor="w")
+        ttk.Checkbutton(body, text="Write playlist files (.m3u8) for My Playlists "
+                        "when you click Update My Playlists", variable=m3u).pack(anchor="w")
         ttk.Checkbutton(body, text="Volume levelling (ReplayGain tags)", variable=rg).pack(anchor="w")
         ttk.Label(body, text="Evens out loudness between songs. Only the tags change, not the "
                   "audio. Also writes iTunes Sound Check\ndata, which iPods only use if your sync "
@@ -465,7 +493,8 @@ class App:
     def set_busy(self, busy, status=None):
         self.busy = busy
         state = "disabled" if busy else "normal"
-        for b in (self.preview_btn, self.dl_btn, self.check_btn, self.settings_btn):
+        for b in (self.preview_btn, self.dl_btn, self.check_btn, self.plpreview_btn,
+                  self.settings_btn):
             b.config(state=state)
         self.stop_btn.config(state="normal" if busy else "disabled")
         if status:
@@ -554,13 +583,15 @@ class App:
     def _render_preview(self, data):
         if data.get("_type") == "playlist" or "entries" in data:
             entries = [e for e in (data.get("entries") or []) if e]
-            have, dead = archived_ids(), unavailable_ids()
+            have, dead, rep = archived_ids(), unavailable_ids(), replacements()
             new = sum(1 for e in entries if e.get("id") not in have | dead)
             lines = [f"PLAYLIST: {data.get('title', '(untitled)')}",
-                     f"{plural(len(entries), 'track')}, {new} new", ""]
+                     f"{plural(len(entries), 'track')}, {new} new{dead_note(entries, dead)}", ""]
             for i, e in enumerate(entries, 1):
                 vid = e.get("id")
-                note = "  (have it)" if vid in have else "  (unavailable)" if vid in dead else ""
+                note = ("  (have it)" if vid in have
+                        else "  (have another copy)" if rep.get(vid) in have
+                        else "  (unavailable)" if vid in dead else "")
                 lines.append(f"{i:>3}. {e.get('title', '(unknown)')}{note}")
             self.write_info("\n".join(lines))
             if new:
@@ -596,19 +627,28 @@ class App:
 
     # Saved playlists
 
+    def show_playlist_count(self):
+        n = len(saved_playlists())
+        self.pl_count.config(text=f"{plural(n, 'playlist')} saved" if n else "No playlists saved yet")
+
     def on_edit_list(self):
         if not PLAYLISTS.exists():
             PLAYLISTS.write_text(PLAYLISTS_TEMPLATE, encoding="utf-8")
         os.startfile(PLAYLISTS)
 
+    def _playlists_or_ask(self):
+        urls = saved_playlists()
+        if not urls and messagebox.askyesno(
+                "My Playlists is empty",
+                "You haven't saved any playlists yet.\n\nOpen My Playlists now to add some?"):
+            self.on_edit_list()
+        return urls
+
     def on_check_playlists(self):
         if self.busy:
             return
-        urls = saved_playlists()
+        urls = self._playlists_or_ask()
         if not urls:
-            if messagebox.askyesno("No saved playlists",
-                                   "playlists.txt has no links in it yet.\n\nOpen it now to add some?"):
-                self.on_edit_list()
             return
         s = dict(self.settings)
         RAW.mkdir(exist_ok=True)
@@ -617,10 +657,24 @@ class App:
         self.titles = {}
         self.songs = {}
         self.set_busy(True, f"Checking {plural(len(urls), 'playlist')}...")
-        self.start_runlog(f"Check playlists: {plural(len(urls), 'playlist')}  settings: {json.dumps(s)}")
-        self.write_info("Checking saved playlists...")
-        self.log_line(f"Checking {plural(len(urls), 'saved playlist')}")
+        self.start_runlog(f"Update My Playlists: {plural(len(urls), 'playlist')}  settings: {json.dumps(s)}")
+        self.write_info("Checking My Playlists...")
+        self.log_line(f"Updating My Playlists ({plural(len(urls), 'playlist')})")
         threading.Thread(target=self._check_worker, args=(urls, s), daemon=True).start()
+
+    def on_preview_playlists(self):
+        if self.busy:
+            return
+        urls = self._playlists_or_ask()
+        if not urls:
+            return
+        self.stopping = False
+        self.titles = {}
+        self.songs = {}
+        self.set_busy(True, f"Checking {plural(len(urls), 'playlist')}...")
+        self.write_info("Checking My Playlists...")
+        threading.Thread(target=self._check_worker, args=(urls, dict(self.settings), True),
+                         daemon=True).start()
 
     def _swap_work(self, plists):
         """Songs in the saved playlists that YouTube won't serve: the ones not
@@ -642,7 +696,7 @@ class App:
         self._stream([PY, str(PIPELINE / "writeplaylists.py"), str(write_run_config(s)), str(data)],
                      show=lambda ln: f"  {ln.strip()}" if ln.strip() else None)
 
-    def _check_worker(self, urls, s):
+    def _check_worker(self, urls, s, preview_only=False):
         try:
             have, dead = archived_ids(), unavailable_ids()
             new_ids, lines, to_get, plists = set(), [], [], []
@@ -665,9 +719,8 @@ class App:
                 plists.append({"title": data.get("title") or "Playlist",
                                "ids": [e.get("id") for e in entries if e.get("id")]})
                 fresh = [e for e in entries if e.get("id") not in have | dead]
-                n_dead = sum(1 for e in entries if e.get("id") in dead)
-                skipped = f"  ({n_dead} unavailable)" if n_dead else ""
-                lines.append(f"{data.get('title') or url}: {len(fresh)} new of {len(entries)}{skipped}")
+                lines.append(f"{data.get('title') or url}: {len(fresh)} new of {len(entries)}"
+                             f"{dead_note(entries, dead)}")
                 lines += [f"     + {e.get('title', '(unknown)')}" for e in fresh]
                 if fresh:
                     to_get.append(url)
@@ -682,6 +735,9 @@ class App:
                 n = len(look) + len(get)
                 lines.append(f"\n{n} unavailable on YouTube, will look for another copy")
                 self.q.put(("info", "\n".join(lines)))
+            if preview_only:
+                self.q.put(("previewed", len(new_ids) + len(look) + len(get)))
+                return
             if not new_ids:
                 if raw_songs() or look or get:
                     if raw_songs():
@@ -822,7 +878,7 @@ class App:
 
         def show(line):
             stripped = line.strip()
-            if stripped.startswith(("art:", str(RAW))) or stripped.startswith("album:"):
+            if stripped.startswith(("art:", "album:", "genre:", str(RAW))):
                 n[0] += 1
                 self.q.put(("status", f"{label} {min(n[0], total)} of {total}"))
             return self._only_problems(line)
@@ -864,6 +920,8 @@ class App:
                     "--remote-components", "ejs:github",
                     *fmt_args, *pause_args,
                     "--embed-thumbnail", "--embed-metadata", "--convert-thumbnails", "jpg",
+                    # YouTube's category ("Music") would end up as the genre.
+                    "--parse-metadata", ":(?P<meta_genre>)",
                     "--no-overwrites", "--ignore-errors", "--newline",
                     "--download-archive", str(ARCHIVE),
                     "-o", str(RAW / "%(title)s [%(id)s].%(ext)s"),
@@ -928,13 +986,19 @@ class App:
                 except OSError:
                     pass
 
-            self.q.put(("log", "Step 4 of 4: albums and release years"))
+            self.q.put(("log", "Step 4 of 4: artists, albums, years and genres"))
+            # Songs that kept YouTube's info list songwriters as artists too.
+            self._stream([PY, str(PIPELINE / "fixartists.py"), run_cfg], show=self._only_problems)
             n_matched = n_files - n_asis - len(dupes)
             self.q.put(("status", f"Albums and years 0 of {max(n_matched, 0)}"))
             album_log = []
             self._stream([PY, str(PIPELINE / "fillalbums.py"), run_cfg],
                          keep=album_log, show=self._counter("Albums and years", max(n_matched, 0)))
             n_albums = sum(1 for ln in album_log if 'album "' in ln)
+            n_new = max(n_files - len(dupes), 0)
+            self.q.put(("status", f"Genres 0 of {n_new}"))
+            self._stream([PY, str(PIPELINE / "fillgenres.py"), run_cfg],
+                         show=self._counter("Genres", n_new))
             if self.stopping:
                 self.q.put(("stopped", None))
                 return
@@ -989,8 +1053,12 @@ class App:
                 elif kind == "info":
                     self.write_info(payload)
                 elif kind == "uptodate":
-                    self.log_line("All saved playlists are up to date.")
+                    self.log_line("My Playlists are up to date.")
                     self.set_busy(False, "Nothing new to download.")
+                elif kind == "previewed":
+                    self.set_busy(False, f"{plural(payload, 'new song')} in My Playlists. Click "
+                                         "Update My Playlists to download them."
+                                  if payload else "My Playlists are up to date.")
                 elif kind == "done":
                     label, blocked = payload
                     got = f" ({label})" if label else ""

@@ -25,6 +25,9 @@ plugins: musicbrainz chroma ftintitle
 chroma:
   auto: yes
 
+ftintitle:
+  format: "(feat. {})"
+
 # Downloaded files have no data source set, which beets treats as a mismatch and
 # penalises, so even perfect matches failed the threshold below.
 musicbrainz:
@@ -32,3 +35,66 @@ musicbrainz:
 
 match:
   strong_rec_thresh: 0.10
+
+# One broad genre per song from Last.fm, picked from genres.txt. The app runs
+# it after fixartists.py so the lookups use the real artist name. Songs that
+# already have a genre are left alone; YouTube's category ("Music") is blanked
+# when downloading, so it never counts as one.
+lastgenre:
+  auto: no
+  source: track
+  count: 1
+  canonical: yes
+  whitelist: genres.txt
+  force: no
+  title_case: yes
+  # Tags the genre tree doesn't place under a broad genre. Checked first,
+  # whole tag only, lowercase.
+  aliases:
+    rock:
+      - (.+[ -])?metal(core)?
+      - (.+[ -])?punk( rock)?
+      - grunge
+      - emo
+      - post-hardcore
+      - rock[- ]*(and|&|n)[- ]*roll
+    electronic:
+      - edm
+      - dance
+      - electronica
+      - electro
+      - electronic music
+      - eurodance
+      - big room
+      - d(rum)?[ &n/]*b(ass)?
+    hip hop:
+      - (glitch|trip)?[ -]*hip[ -]*hop
+      - rap
+      - hiphop
+    latin:
+      - latin.*
+      - reggaeton
+      - bachata
+      - salsa
+      - cumbia
+      - dembow
+      - bossa nova
+      - samba
+      - brazilian
+    folk:
+      - (.+[ -])?folk
+      - folk[ -]*(rock|pop)
+      - americana
+      - acoustic
+      - singer[ -]songwriter
+    pop:
+      - (.+[ -])?pop
+    jazz:
+      - big band
+      - (.+[ -])?jazz
+    r&b:
+      - r(hythm)?[ &n/]*b(lues)?
+      - (neo[ -]?)?soul
+    soundtrack:
+      - (film |movie |video game )?score
+      - ost

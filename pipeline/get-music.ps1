@@ -39,6 +39,7 @@ Write-Host "`nDownloading" -ForegroundColor Cyan
     --format "bestaudio[ext=m4a]/bestaudio" `
     --extract-audio --audio-format m4a --audio-quality 160K `
     --embed-thumbnail --embed-metadata --convert-thumbnails jpg `
+    --parse-metadata ":(?P<meta_genre>)" `
     --no-overwrites --ignore-errors `
     --download-archive (Join-Path $Pipeline "downloaded.txt") `
     --output "$Raw\%(title)s [%(id)s].%(ext)s" `
@@ -53,7 +54,9 @@ Write-Host "`nTagging" -ForegroundColor Cyan
 & $Py (Join-Path $Pipeline "prunelib.py")
 & $Py -m beets import -q -s $Raw
 
-Write-Host "`nAlbums and release years" -ForegroundColor Cyan
+Write-Host "`nArtists, albums, years and genres" -ForegroundColor Cyan
+& $Py (Join-Path $Pipeline "fixartists.py")
 & $Py (Join-Path $Pipeline "fillalbums.py")
+& $Py (Join-Path $Pipeline "fillgenres.py")
 
 Write-Host "`nDone. Songs are in $Final" -ForegroundColor Green

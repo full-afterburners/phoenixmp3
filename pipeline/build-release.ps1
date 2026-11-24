@@ -36,7 +36,7 @@ Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "READ ME.txt")
 
 # Only these files from pipeline\, so nothing personal gets copied.
 $Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.py",
-        "writeplaylists.py", "findcopy.py", "make_notices.py", "get-music.ps1", "config.yaml",
+        "writeplaylists.py", "findcopy.py", "fixartists.py", "fillgenres.py", "genres.txt", "make_notices.py", "get-music.ps1", "config.yaml",
         "icon.ico", "README.md"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
 

@@ -21,9 +21,9 @@ Open the folder and double-click START HERE.bat.
 Paste a link in the box at the top, hit Preview if you want to see what's in it, then
 hit Download. Your songs go into the downloadswithmeta folder.
 
-If there are playlists you keep adding songs to, click "List of checked playlists",
+If there are playlists you keep adding songs to, click "Add or remove My Playlists",
 put one playlist link per line in the file that opens, and save it. After that,
-"Check playlists" will check that persistant list for new songs that have been added to those playlists and downlaods them.
+"Update My Playlists" will check that persistant list for new songs that have been added to those playlists and downlaods them.
 
 YouTube changes stuff every now and then, which breaks downloading.
 

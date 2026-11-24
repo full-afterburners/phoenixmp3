@@ -1,0 +1,15 @@
+# The only genres songs can get. Last.fm tags are mapped up to one of these
+# (indie folk -> folk, hard bop -> jazz, progressive house -> electronic).
+blues
+classical
+country
+electronic
+folk
+hip hop
+jazz
+latin
+pop
+r&b
+reggae
+rock
+soundtrack
