@@ -9,6 +9,9 @@
 #    put the artist in the title ("MGMT - Kids"), so that gets split.
 #  - "feat. X" in titles becomes "(feat. X)", and the album artist is set to
 #    the artist so albums group properly.
+#  - The sort names (which players sort by) are set to the artist as shown, so
+#    the artist list is plain A-Z instead of "Harris, Calvin" style. This one
+#    is checked every run so it follows hand edits too.
 # Each song is only changed once, so later hand edits are kept.
 #
 #   python fixartists.py <run-config.yaml> [--pretend]
@@ -85,6 +88,13 @@ def main():
     lib = Library(config["library"].as_filename(), config["directory"].as_filename())
     for item in lib.items():
         if item.get(DONE_FLAG):
+            # Players sort by the sort-name tags. MusicBrainz fills them with
+            # "Harris, Calvin" style names, so make them match what's shown.
+            if not pretend and (item.artist_sort != item.artist
+                                or item.albumartist_sort != item.albumartist):
+                item.artist_sort, item.albumartist_sort = item.artist, item.albumartist
+                item.try_write()
+                item.store()
             continue
         artist, title = credits(item)
         changed = (artist, title) != (item.artist, item.title)
@@ -94,6 +104,7 @@ def main():
             continue
         item.artist, item.title = artist, title
         item.albumartist = artist
+        item.artist_sort = item.albumartist_sort = artist
         item.try_write()
         if changed:
             try:
