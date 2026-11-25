@@ -62,9 +62,6 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 _console_py = Path(sys.executable).with_name("python.exe")
 PY = str(_console_py) if _console_py.exists() else sys.executable
 
-SHORTCUT = MUSIC / f"{APP_NAME}.lnk"
-SHORTCUT_STAMP = PIPELINE / "shortcut.txt"
-
 # yt-dlp errors that won't go away by retrying.
 _ERR_RE = re.compile(r"ERROR: \[youtube\] ([0-9A-Za-z_-]{11}): (.+)")
 _PERMANENT = ("video unavailable", "not available", "private video", "removed",
@@ -225,33 +222,6 @@ def child_env():
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     return env
-
-
-def ensure_shortcut():
-    """Create the .lnk in the top folder. Shortcuts hold absolute paths so one
-    can't be shipped in the zip; this also fixes it if the folder moves."""
-    exe = Path(sys.executable)
-    if os.name != "nt" or exe.name.lower() != "pythonw.exe":
-        return
-    want = f"{SHORTCUT}|{exe}|{PIPELINE / 'gui.pyw'}"
-    try:
-        if SHORTCUT.exists() and SHORTCUT_STAMP.read_text(encoding="utf-8") == want:
-            return
-    except OSError:
-        pass
-    env = dict(os.environ, LNK=str(SHORTCUT), TGT=str(exe),
-               ARGS=f'"{PIPELINE / "gui.pyw"}"', WD=str(MUSIC),
-               ICO=f"{ICON},0", DESC=APP_NAME)
-    ps = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:LNK);"
-          "$s.TargetPath=$env:TGT;$s.Arguments=$env:ARGS;$s.WorkingDirectory=$env:WD;"
-          "$s.IconLocation=$env:ICO;$s.Description=$env:DESC;$s.Save()")
-    try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                           env=env, creationflags=NO_WINDOW, timeout=30, capture_output=True)
-        if r.returncode == 0 and SHORTCUT.exists():
-            SHORTCUT_STAMP.write_text(want, encoding="utf-8")
-    except (OSError, subprocess.SubprocessError):
-        pass
 
 
 def plural(n, word):
@@ -1093,5 +1063,4 @@ if __name__ == "__main__":
             pass
     root = tk.Tk()
     App(root)
-    threading.Thread(target=ensure_shortcut, daemon=True).start()
     root.mainloop()

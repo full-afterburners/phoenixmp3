@@ -41,8 +41,8 @@ gets tagged on the next run.
 
 Top folder:
 
-- `START HERE.bat` starts the app with the bundled Python. The app then creates
-  `phoenixmp3.lnk` next to it, and recreates it if the folder moves.
+- `phoenixmp3.exe` starts the app with the bundled Python. It's built from
+  `pipeline\launcher.cs` by `build-release.ps1`, so it isn't in git.
 - `playlists.txt` is the list of saved playlist links.
 - `downloadswithmeta\` is the default output folder.
 

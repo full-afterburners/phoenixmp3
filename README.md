@@ -14,7 +14,7 @@ Before you unzip it, right-click the zip, go to Properties and tick "Unblock" at
 bottom. Otherwise Windows complains about every file. Then right-click it again,
 choose Extract All, and put the folder wherever you want to keep it.
 
-Open the folder and double-click START HERE.bat.
+Open the folder and double-click phoenixmp3.
 
 ## Using it
 

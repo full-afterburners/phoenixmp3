@@ -30,8 +30,12 @@ $Stage = Join-Path $Dist $Safe
 if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 New-Item -ItemType Directory -Force (Join-Path $Stage "pipeline") | Out-Null
 
-Copy-Item (Join-Path $Root "START HERE.bat") $Stage
-Copy-Item (Join-Path $Root "README.md") $Stage
+# phoenixmp3.exe, built with the C# compiler that comes with Windows (.NET Framework 4).
+$Csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+$Exe = Join-Path $Root "$Safe.exe"
+& $Csc /nologo /target:winexe /optimize+ "/win32icon:$(Join-Path $Pipeline 'icon.ico')" "/out:$Exe" (Join-Path $Pipeline "launcher.cs")
+if ($LASTEXITCODE -ne 0) { throw "Building $Safe.exe failed (csc exit $LASTEXITCODE)" }
+Copy-Item $Exe $Stage
 Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "READ ME.txt")
 
 # Only these files from pipeline\, so nothing personal gets copied.
@@ -41,7 +45,7 @@ $Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
 
 foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
-    robocopy (Join-Path $Pipeline $dir) (Join-Path $Stage "pipeline\$dir") /E /XD __pycache__ /XF *.pyc /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy (Join-Path $Pipeline $dir) (Join-Path $Stage "pipeline\$dir") /E /XD __pycache__ test tests /XF *.pyc /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Copying $dir failed (robocopy exit $LASTEXITCODE)" }
 }
 
