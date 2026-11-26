@@ -27,7 +27,11 @@ from beetsplug._utils.musicbrainz import MusicBrainzAPI
 
 LIMIT = 25
 # Versions of a song (same idea as cleantitles/fillalbums/findcopy): ranked after the original.
-VERSION = re.compile(r"(live|remix|mix|edit|acoustic|instrumental|demo|cover|karaoke|sped|slowed)", re.I)
+VERSION = re.compile(r"\b(live|remix|mix|edit|acoustic|instrumental|demo|cover|karaoke|sped|slowed)\b", re.I)
+# Video discs on deluxe editions (concert DVDs...) have no songs to download.
+VIDEO_MEDIA = re.compile(r"DVD|Blu-ray|VHS|Video", re.I)
+PAGE = 100        # MusicBrainz's most results per browse request
+MAX_PAGES = 10
 # Prefer worldwide / US releases when choosing an album's default edition.
 COUNTRY_RANK = {"XW": 0, "US": 1, "GB": 2}
 
@@ -35,6 +39,17 @@ COUNTRY_RANK = {"XW": 0, "US": 1, "GB": 2}
 def credit(artist_credit: list) -> str:
     """'Machine Gun Kelly feat. Halsey' from MusicBrainz's artist credit list."""
     return "".join(c.get("name", "") + c.get("joinphrase", "") for c in artist_credit or []).strip()
+
+
+def names(artist_credit: list) -> list[str]:
+    """Every name the artists go by here: as credited ("Machine Gun Kelly") and
+    their own ("mgk"), for checking YouTube's artist or channel name."""
+    out = []
+    for c in artist_credit or []:
+        for n in (c.get("name"), (c.get("artist") or {}).get("name")):
+            if n and n not in out:
+                out.append(n)
+    return out
 
 
 def year(date: str | None) -> int | None:
@@ -75,7 +90,7 @@ def search_songs(api, text: str, artist: str | None = None) -> dict:
         first = min(studio or releases, key=lambda r: r.get("date") or "9999", default={})
         out.append({
             "id": rec["id"], "title": rec.get("title"), "artist": credit(rec.get("artist_credit")),
-            "length": seconds(rec.get("length")), "disambiguation": rec.get("disambiguation") or "",
+            "artist_names": names(rec.get("artist_credit")), "length": seconds(rec.get("length")), "disambiguation": rec.get("disambiguation") or "",
             "album": (first.get("release_group") or {}).get("title") or first.get("title"),
             "year": year(rec.get("first_release_date") or first.get("date")),
             "score": rec.get("score"), "_studio": bool(studio),
@@ -99,8 +114,19 @@ def search_artists(api, text: str) -> dict:
     } for a in found]}
 
 
+def browse_all(api, entity: str, **kwargs) -> list:
+    """Every page of a browse: popular albums have more than 100 releases."""
+    out = []
+    for page in range(MAX_PAGES):
+        got = api._browse(entity, limit=PAGE, offset=page * PAGE, **kwargs)
+        out += got
+        if len(got) < PAGE:
+            break
+    return out
+
+
 def discography(api, artist_id: str) -> dict:
-    groups = api._browse("release-group", artist=artist_id, type="album|ep", limit=100)
+    groups = browse_all(api, "release-group", artist=artist_id, type="album|ep")
     own = [g for g in groups if not g.get("secondary_types")]   # no live albums, compilations...
     own.sort(key=lambda g: g.get("first_release_date") or "9999")
     return {"results": [{
@@ -110,7 +136,7 @@ def discography(api, artist_id: str) -> dict:
 
 
 def editions(api, group_id: str) -> dict:
-    releases = api._browse("release", inc="media", limit=100, **{"release-group": group_id})
+    releases = browse_all(api, "release", inc="media", **{"release-group": group_id})
     rows = [{
         "id": r["id"], "title": r.get("title"), "date": r.get("date"), "country": r.get("country"),
         "status": r.get("status"), "disambiguation": r.get("disambiguation") or "",
@@ -136,14 +162,15 @@ def tracks(api, release_id: str) -> dict:
     rel = api.get_release(release_id, includes=["recordings", "artist-credits", "release-groups"])
     group = rel.get("release_group") or {}
     album_artist = credit(rel.get("artist_credit"))
-    media = rel.get("media") or []
+    media = [m for m in rel.get("media") or [] if not VIDEO_MEDIA.search(m.get("format") or "")]
     out = []
     for disc, medium in enumerate(media, 1):
         for t in medium.get("tracks") or []:
             rec = t.get("recording") or {}
+            track_credit = t.get("artist_credit") or rec.get("artist_credit") or rel.get("artist_credit")
             out.append({
                 "disc": disc, "n": t.get("position"), "title": t.get("title") or rec.get("title"),
-                "artist": credit(t.get("artist_credit") or rec.get("artist_credit")) or album_artist,
+                "artist": credit(track_credit) or album_artist, "artist_names": names(track_credit),
                 "length": seconds(t.get("length") or rec.get("length")), "recording_id": rec.get("id"),
             })
     return {"release": {
@@ -151,7 +178,8 @@ def tracks(api, release_id: str) -> dict:
         # The release group title is the plain album name, without "(Deluxe Edition)" etc.,
         # the same name fillalbums.py uses.
         "title": group.get("title") or rel.get("title"), "edition": rel.get("title"),
-        "artist": album_artist, "year": year(group.get("first_release_date") or rel.get("date")),
+        "artist": album_artist, "artist_names": names(rel.get("artist_credit")),
+        "year": year(group.get("first_release_date") or rel.get("date")),
         "type": group.get("primary_type"), "discs": len(media),
         "disc_tracks": [len(m.get("tracks") or []) for m in media],
     }, "tracks": out}
@@ -163,14 +191,15 @@ COMMANDS = {"albums": search_albums, "songs": search_songs, "artists": search_ar
 
 def main():
     with_artist = {"albums", "songs"}
-    if not (len(sys.argv) == 3 or (len(sys.argv) == 4 and sys.argv[1] in with_artist))             or sys.argv[1] not in COMMANDS:
+    args_ok = len(sys.argv) == 3 or (len(sys.argv) == 4 and sys.argv[1] in with_artist)
+    if not args_ok or sys.argv[1] not in COMMANDS:
         print(json.dumps({"error": "usage: mbsearch.py " + "|".join(COMMANDS) + ' <text or id> ["<artist>"]'}))
         sys.exit(1)
     config.read()
     try:
         result = COMMANDS[sys.argv[1]](MusicBrainzAPI(), *sys.argv[2:])
     except Exception as e:
-        print(json.dumps({"error": f"MusicBrainz lookup failed: {' '.join(str(e).split())[:300]}"}))
+        print(json.dumps({"error": f"MusicBrainz lookup failed: {type(e).__name__}: {' '.join(str(e).split())[:300]}"}))
         sys.exit(1)
     print(json.dumps(result, ensure_ascii=False))
 

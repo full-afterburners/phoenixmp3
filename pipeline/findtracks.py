@@ -7,13 +7,16 @@
 # or a list of songs: {"release": null, "tracks": [{"recording_id", "title",
 # "artist", "length"}]}.
 #  - For an album it first looks for YouTube Music's official album playlist and
-#    takes each track from it whose title, version and length (within 10 s) match
-#    the same position on the MusicBrainz track list.
+#    takes each track from it whose title, version, artist and length (within
+#    10 s) match the same position on the MusicBrainz track list. Playlist
+#    tracks aren't checked for being downloadable; the download reports those.
 #  - Every other track is searched for on its own with findcopy.py's rules: the
 #    same artist, the same version (a remix or live take doesn't match the
 #    original) and within 10 seconds of the real length.
 # Prints one line per track, in track list order:
 #   found <recording id> <video id> <artist> - <title>
+#   unsure <recording id> <video id> <artist> - <title>   MusicBrainz has no length
+#                                    for it, so only title and artist matched: ask
 #   none <recording id>              searched fine, nothing matched
 #   error <recording id> <reason>    blocked, offline, yt-dlp broken: try again later
 # and before them, when an album playlist was used:
@@ -31,15 +34,29 @@ PAUSE = 1.5       # seconds between YouTube searches, like findcopy.py
 ALBUM_RESULTS = 3  # album search results checked for the official playlist
 
 
-def matches(track: dict, entry: dict) -> bool:
-    """A playlist entry is this track: same title, same version, about the same length."""
+VARIOUS = "various artists"
+
+
+def artist_names(track: dict, release: dict | None = None) -> list[str]:
+    return track.get("artist_names") or (release or {}).get("artist_names") or [track["artist"]]
+
+
+def matches(track: dict, entry: dict, release: dict) -> bool:
+    """A playlist entry is this track: same title, same version, the same artist
+    (so a tribute album with the same songs doesn't count) and about the same length.
+    Tracks without a known length are never taken from a playlist."""
     title = entry.get("title") or ""
     if not findcopy.same_title(track["title"], title):
         return False
     if findcopy.versions(title) != findcopy.versions(track["title"]):
         return False
+    channel = entry.get("channel") or entry.get("uploader") or ""
+    wanted = artist_names(track, release) + [n for n in release.get("artist_names") or []
+                                             if n.lower() != VARIOUS]
+    if not any(findcopy.same_artist(n, findcopy.clean_artist(channel)) for n in wanted):
+        return False
     length, dur = track.get("length"), entry.get("duration")
-    return not (length and dur and abs(dur - length) > 10)
+    return bool(length and dur) and abs(dur - length) <= 10
 
 
 def album_playlist(ydl, release: dict, tracks: list) -> tuple[str | None, dict]:
@@ -54,7 +71,7 @@ def album_playlist(ydl, release: dict, tracks: list) -> tuple[str | None, dict]:
         time.sleep(PAUSE)
         album = ydl.extract_info(result["url"], download=False)   # album page -> its playlist
         entries = list((album or {}).get("entries") or [])
-        hits = {i: e for i, (t, e) in enumerate(zip(tracks, entries)) if e and matches(t, e)}
+        hits = {i: e for i, (t, e) in enumerate(zip(tracks, entries)) if e and matches(t, e, release)}
         if len(hits) > len(best):
             best_id, best = album.get("id"), hits
         if len(best) == len(tracks):
@@ -102,7 +119,10 @@ def main():
             continue
         if info:
             artist = info.get("artist") or findcopy.clean_artist(info.get("channel"))
-            print(f"found {key} {info['id']} {artist} - {info.get('title')}", flush=True)
+            # Without a length only the title and artist were checked, which can
+            # pick "Home Sweet Home" for "Home": let the user confirm it.
+            word = "found" if track.get("length") else "unsure"
+            print(f"{word} {key} {info['id']} {artist} - {info.get('title')}", flush=True)
         else:
             print(f"none {key}", flush=True)
 
