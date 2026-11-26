@@ -24,7 +24,12 @@ This is the technical side. The README in the top folder covers normal use.
    always sets the real release year, since YouTube's year is the upload date.
 8. `fillgenres.py` gives each song one broad genre from Last.fm, from the short
    list in `genres.txt` (the mapping is in the `lastgenre` part of `config.yaml`).
-   YouTube's category ("Music") is blanked when downloading. Songs Last.fm doesn't
+   `source` picks song, album or artist tags first; `family: sound` regroups
+   sub-genres by name and `moves` re-parents chosen genres (see the comments in
+   `config.yaml` and `fillgenres.py`). Each song's Last.fm tags are kept in the
+   library (`lastfm_*` fields), so `fillgenres.py <run-config> --refile
+   [--since <unix time>]` can re-file genres with new settings without asking
+   Last.fm again. YouTube's category ("Music") is blanked when downloading. Songs Last.fm doesn't
    know get no genre and are tried again next run.
 9. With playlist files turned on, `writeplaylists.py` writes an .m3u8 for each
    saved playlist into `Playlists\` in the output folder.

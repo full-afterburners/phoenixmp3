@@ -48,6 +48,14 @@ lastgenre:
   whitelist: genres.txt
   force: no
   title_case: yes
+  # How sub-genres are grouped: history (where a style came from, beets' tree
+  # as is) or sound (what its name says: dream pop under pop, not rock).
+  family: history
+  # Genres moved under a different parent, made with the Genre Picker, e.g.
+  #   moves:
+  #     singer-songwriter: folk
+  # ("top" makes a genre top-level). Empty keeps beets' tree as it is.
+  moves: {}
   # The genre tree decides first (with beets' built-in spelling aliases, so
   # "alt-rock" or "shoegazing" are recognised). These are only used for songs
   # whose tags the tree doesn't know at all ("metal", "edm", "reggaeton"...).

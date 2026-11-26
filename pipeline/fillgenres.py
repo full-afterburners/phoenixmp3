@@ -10,14 +10,31 @@
 #    "Music" is blanked.
 #  - Tags are mapped to the list with beets' genre tree first. The patterns in
 #    lastgenre.fallbacks in config.yaml only cover tags the tree doesn't know.
+#  - lastgenre.source picks where tags come from: track (the song, then its
+#    album, then its artist), album (album, then artist) or artist.
+#  - lastgenre.family: sound regroups sub-genres by what their name says
+#    ("dream pop" under pop, not rock), and lastgenre.moves puts chosen genres
+#    under a different parent ("singer-songwriter: folk"). Both are made with
+#    the Genre Picker; leaving them out keeps beets' tree exactly as it is.
+#  - Every song's Last.fm tag lists (song, album, artist) are kept in the
+#    library (lastfm_* fields), including songs that already have a genre, so
+#    genres can be re-filed with new settings without asking Last.fm again.
+#    If Last.fm can't be reached nothing is saved and the song is tried again
+#    next run; after 5 failures in a row the step stops and exits with an error.
+#  - --refile re-picks the genre of songs that already have one, from the kept
+#    tags, using the current settings. --since <unix time> limits the run to
+#    songs added after that time (one download). --pretend changes nothing.
 #
-#   python fillgenres.py <run-config.yaml> [--pretend]
+#   python fillgenres.py <run-config.yaml> [--pretend] [--refile] [--since <time>]
+import datetime
+import json
 import re
 import sys
 from pathlib import Path
 
+import pylast
 from beets import config
-from beets.library import Library
+from beets.library import Item, Library
 
 HERE = Path(__file__).resolve().parent
 JOINERS = re.compile(r"\s*(?:,|&|\+|/|\bx\b|\bvs\.?|\bwith\b|\bf\./|\bfeat\.?|\bft\.?)\s*", re.IGNORECASE)
@@ -28,9 +45,98 @@ def allowed():
     return {ln.strip().lower() for ln in lines if ln.strip() and not ln.startswith("#")}
 
 
+# "Sounds like" grouping: a genre whose name ends in one of these goes under that genre.
+SOUND_HEADS = {"pop": "pop", "rock": "rock", "metal": "heavy metal", "punk": "punk rock",
+               "folk": "folk", "jazz": "jazz", "blues": "blues", "country": "country", "soul": "soul",
+               "funk": "funk", "house": "house", "techno": "techno", "trance": "trance", "disco": "disco",
+               "hip hop": "hip hop", "rap": "hip hop", "reggae": "reggae", "ska": "ska", "gospel": "gospel"}
+
+
+def tree_parents(branches: list[list[str]]) -> dict[str, str | None]:
+    """{genre: parent} from beets' flattened tree; the first branch wins, like find_parents."""
+    parent: dict[str, str | None] = {}
+    for branch in branches:
+        for i, genre in enumerate(branch):
+            parent.setdefault(genre, branch[i - 1] if i else None)
+    return parent
+
+
+def ancestors(name: str, parent: dict) -> list[str]:
+    out = []
+    while parent.get(name) is not None and len(out) <= len(parent):
+        name = parent[name]
+        out.append(name)
+    return out
+
+
+def sound_parents(parent: dict) -> dict[str, str | None]:
+    """The tree regrouped by name: "dream pop" under pop, "rap metal" under heavy metal.
+    Names that don't end in a known genre keep their place."""
+    sound = dict(parent)
+    for name in parent:
+        words = re.split(r"[ \-]+", name)
+        if len(words) < 2:
+            continue
+        head = SOUND_HEADS.get(" ".join(words[-2:])) or SOUND_HEADS.get(words[-1])
+        if not head or head == name or head not in parent or name in ancestors(head, sound):
+            continue
+        sound[name] = head
+    return sound
+
+
+def regrouped_chains(branches: list[list[str]], family: str, moves: dict) -> dict | None:
+    """Each genre's chain of parents (closest first, like beets' find_parents) after
+    the family regrouping and the user's moves. None when neither changes anything,
+    so beets' own tree is used untouched. Unchanged parts follow beets' tree exactly."""
+    import beetsplug.lastgenre as lg_module
+    # beets' own lookup, even if an earlier make_plugin() already pointed it at regrouped chains
+    find_parents = getattr(lg_module, "_beets_find_parents", lg_module.find_parents)
+    parent = tree_parents(branches)
+    changed: dict[str, str | None] = {}
+    if family == "sound":
+        changed = {n: p for n, p in sound_parents(parent).items() if p != parent[n]}
+
+    def chain(name: str, depth: int = 0) -> list[str]:
+        if depth > len(parent):
+            raise ValueError("genre moves loop")
+        if name in changed:
+            up = changed[name]
+            return [name, *(chain(up, depth + 1) if up else [])]
+        orig = find_parents(name, branches)
+        for i in range(1, len(orig)):
+            if orig[i] in changed:
+                return orig[:i] + chain(orig[i], depth + 1)
+        return orig
+
+    for name, to in moves.items():
+        name, to = str(name).lower(), str(to or "top").lower()
+        if name not in parent or (to != "top" and to not in parent):
+            print(f"  genre: couldn't move {name} under {to} (not in the genre tree)", flush=True)
+            continue
+        if to != "top" and name in chain(to):
+            print(f"  genre: couldn't move {name} under {to} (it's one of its own sub-genres)", flush=True)
+            continue
+        changed[name] = None if to == "top" else to
+    if not changed:
+        return None
+    return {name: chain(name) for name in parent}
+
+
+def use_chains(chains: dict | None) -> None:
+    """Point the lastgenre plugin's tree lookups at the regrouped chains (or back at beets' tree)."""
+    import beetsplug.lastgenre as lg_module
+    original = getattr(lg_module, "_beets_find_parents", lg_module.find_parents)
+    lg_module._beets_find_parents = original
+    if chains is None:
+        lg_module.find_parents = original
+    else:
+        lg_module.find_parents = lambda candidate, branches: list(chains.get(candidate.lower()) or [candidate])
+
+
 def make_plugin():
     """beets' lastgenre plugin, set up so the genre tree decides first and the
-    lastgenre.fallbacks patterns in config.yaml only cover tags it doesn't know."""
+    lastgenre.fallbacks patterns in config.yaml only cover tags it doesn't know.
+    lastgenre.family and lastgenre.moves regroup the tree first."""
     lg = config["lastgenre"]
     lg["whitelist"] = str(HERE / "genres.txt")
     lg["force"] = True
@@ -40,6 +146,9 @@ def make_plugin():
                  for genre, pats in (lg["fallbacks"].get() or {}).items() for p in pats]
     from beetsplug.lastgenre import LastGenrePlugin
     plugin = LastGenrePlugin()
+    family = lg["family"].as_choice(["history", "sound"]) if lg["family"].exists() else "history"
+    moves = (lg["moves"].get(dict) or {}) if lg["moves"].exists() else {}
+    use_chains(regrouped_chains(plugin.c14n_branches, family, moves))
     tree_only = plugin._resolve_genres
 
     def resolve(tags, artist=None):
@@ -65,35 +174,160 @@ def from_current(plugin, item, current, ok):
     return mapped or [g for g in current if g.lower() != "music"][:1]
 
 
+class LookupFailed(Exception):
+    """Last.fm couldn't be asked (offline, blocked, server trouble), as opposed to
+    Last.fm answering that it has no tags."""
+
+
+# Where each Last.fm tag list is kept on the song in the library (beets flexible
+# attributes, stored as JSON lists). "1" = looked up with just the first artist.
+TAG_FIELDS = {"track": "lastfm_track", "album": "lastfm_album", "artist": "lastfm_artist",
+              "track1": "lastfm_track1", "artist1": "lastfm_artist1"}
+FETCHED_FIELD = "lastfm_fetched"   # date the lists were fetched
+
+
+def first_artist(artist: str) -> str | None:
+    """"A feat. B" -> "A", or None when there's only one artist."""
+    first = JOINERS.split(artist or "")[0].strip()
+    return first if first and first != artist else None
+
+
+def stored_tags(item) -> dict | None:
+    if FETCHED_FIELD not in item:
+        return None
+    return {kind: json.loads(item[field]) for kind, field in TAG_FIELDS.items() if field in item}
+
+
+def store_tags(item, tags: dict) -> None:
+    for kind, field in TAG_FIELDS.items():
+        if kind in tags:
+            item[field] = json.dumps(tags[kind], ensure_ascii=False)
+    item[FETCHED_FIELD] = datetime.date.today().isoformat()
+
+
+class GenreLookup:
+    """Fetches every Last.fm tag list a song's genre can come from (its own, its
+    album's, its artist's, and the first artist's when there are several), then
+    picks the genre from those lists exactly the way beets' lastgenre would, so
+    a song can be re-filed later without asking Last.fm again."""
+
+    def __init__(self, plugin):
+        self.plugin = plugin
+        self.client = plugin.client
+        self.real_fetch = plugin.client.fetch
+        self.cache: dict[tuple, list[str]] = {}
+        self.serving: dict = {}
+        self.client.fetch_genres = self._fetch_genres_strict
+        self.client.fetch = self._serve
+
+    def _fetch_genres_strict(self, entity) -> list[str]:
+        # beets' own version turns every error into "no tags"; only "not found" is that
+        try:
+            res = entity.get_top_tags()
+        except pylast.WSError as e:
+            if str(e.status) in ("6", "7"):   # Last.fm doesn't know this song/album/artist
+                return []
+            raise LookupFailed(f"Last.fm: {e}") from e
+        except (pylast.NetworkError, pylast.MalformedResponseError) as e:
+            raise LookupFailed(f"Last.fm: {e}") from e
+        if self.client.min_weight:
+            res = [el for el in res if int(el.weight or 0) >= self.client.min_weight]
+        return [el.item.get_name().lower() for el in res]
+
+    def _get(self, kind: str, item) -> list[str]:
+        key = (kind, *self.client.FETCH_METHODS[kind][1](item))
+        if key not in self.cache:   # albums and artists repeat a lot within one run
+            self.cache[key] = self.real_fetch(kind, item)
+        return self.cache[key]
+
+    def fetch_all(self, item) -> dict:
+        tags = {kind: self._get(kind, item) for kind in ("track", "album", "artist")}
+        first = first_artist(item.artist)
+        if first:
+            solo = Item(artist=first, albumartist=item.albumartist, title=item.title, album=item.album)
+            tags["track1"] = self._get("track", solo)
+            tags["artist1"] = self._get("artist", solo)
+        return tags
+
+    def _serve(self, kind: str, obj, *args) -> list[str]:
+        solo = self.serving["solo"] and kind in ("track", "artist")
+        return self.serving["tags"].get(kind + ("1" if solo else ""), [])
+
+    def genre(self, item, tags: dict, ok: set) -> list[str]:
+        """The listed genre beets picks from these tag lists, or []."""
+        self.serving = {"tags": tags, "solo": False}
+        genres, _ = self.plugin._get_genre(item)
+        first = first_artist(item.artist)
+        if not genres and first and "track1" in tags:
+            self.serving["solo"] = True
+            real = item.artist
+            item.artist = first
+            try:
+                genres, _ = self.plugin._get_genre(item)
+            finally:
+                item.artist = real
+        return [g for g in genres if g.lower() in ok][:1]
+
+
+def parse_args(argv: list[str]) -> tuple[str | None, bool, bool, float | None]:
+    pretend, refile, since, rest = False, False, None, []
+    it = iter(argv)
+    for a in it:
+        if a == "--pretend":
+            pretend = True
+        elif a == "--refile":
+            refile = True
+        elif a == "--since":
+            since = float(next(it))
+        else:
+            rest.append(a)
+    return (rest[0] if rest else None), pretend, refile, since
+
+
+MAX_FAILS = 5   # lookups failing in a row before giving up (offline)
+
+
 def main():
-    pretend = "--pretend" in sys.argv
-    args = [a for a in sys.argv[1:] if a != "--pretend"]
+    run_config, pretend, refile, since = parse_args(sys.argv[1:])
     config.read()
-    if args:
-        config.set_file(args[0])
+    if run_config:
+        config.set_file(run_config)
     plugin = make_plugin()
+    lookup = GenreLookup(plugin)
     ok = allowed()
 
     lib = Library(config["library"].as_filename(), config["directory"].as_filename())
+    fails = 0
     for item in lib.items():
+        if since is not None and item.added < since:
+            continue
         current = list(item.get("genres", with_album=False) or [])
-        if current and current[0].lower() in ok:
+        listed = bool(current) and current[0].lower() in ok
+        tags = stored_tags(item)
+        if listed and not refile and tags is not None:
             continue
         name = f"{item.artist} - {item.title}"
+        if tags is None:
+            try:
+                tags = lookup.fetch_all(item)
+                fails = 0
+            except LookupFailed as e:
+                fails += 1
+                print(f"  genre: lookup failed ({e}) - {name}", flush=True)
+                if fails >= MAX_FAILS:
+                    print("  genre: couldn't reach Last.fm, stopping (songs will be tried again next run)", flush=True)
+                    sys.exit(1)
+                continue
+            if not pretend:
+                store_tags(item, tags)
+                item.store()   # library only: the tag lists aren't written into the file
+        if listed and not refile:
+            continue   # it already has a genre; its tags were only kept for later
         try:
-            genres, _ = plugin._get_genre(item)
-            first = JOINERS.split(item.artist or "")[0].strip()
-            if not genres and first and first != item.artist:
-                real = item.artist
-                item.artist = first
-                try:
-                    genres, _ = plugin._get_genre(item)
-                finally:
-                    item.artist = real
+            genres = lookup.genre(item, tags, ok)
         except Exception as e:
             print(f"  genre: lookup failed ({e}) - {name}", flush=True)
             continue
-        genres = [g for g in genres if g.lower() in ok][:1]
         if genres:
             print(f"  genre: {name}: {genres[0]}", flush=True)
         else:
