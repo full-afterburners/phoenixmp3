@@ -1,0 +1,111 @@
+# Finds the tracks of a MusicBrainz album or song (from mbsearch.py) on YouTube
+# Music, so they can be downloaded without pasting links.
+#
+#   python findtracks.py <tracks.json>
+#
+# tracks.json is the output of "mbsearch.py tracks" (an album: {"release", "tracks"})
+# or a list of songs: {"release": null, "tracks": [{"recording_id", "title",
+# "artist", "length"}]}.
+#  - For an album it first looks for YouTube Music's official album playlist and
+#    takes each track from it whose title, version and length (within 10 s) match
+#    the same position on the MusicBrainz track list.
+#  - Every other track is searched for on its own with findcopy.py's rules: the
+#    same artist, the same version (a remix or live take doesn't match the
+#    original) and within 10 seconds of the real length.
+# Prints one line per track, in track list order:
+#   found <recording id> <video id> <artist> - <title>
+#   none <recording id>              searched fine, nothing matched
+#   error <recording id> <reason>    blocked, offline, yt-dlp broken: try again later
+# and before them, when an album playlist was used:
+#   playlist <playlist id> <matched>/<total>
+import json
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+
+import findcopy   # also puts the bundled yt-dlp on the path
+import yt_dlp
+
+PAUSE = 1.5       # seconds between YouTube searches, like findcopy.py
+ALBUM_RESULTS = 3  # album search results checked for the official playlist
+
+
+def matches(track: dict, entry: dict) -> bool:
+    """A playlist entry is this track: same title, same version, about the same length."""
+    title = entry.get("title") or ""
+    if not findcopy.same_title(track["title"], title):
+        return False
+    if findcopy.versions(title) != findcopy.versions(track["title"]):
+        return False
+    length, dur = track.get("length"), entry.get("duration")
+    return not (length and dur and abs(dur - length) > 10)
+
+
+def album_playlist(ydl, release: dict, tracks: list) -> tuple[str | None, dict]:
+    """The official YouTube Music album playlist that best lines up with the track
+    list, and {track index: entry} for the positions that match."""
+    q = urllib.parse.quote(f"{findcopy.clean_artist(release['artist'])} {release['title']}")
+    res = ydl.extract_info(f"https://music.youtube.com/search?q={q}#albums", download=False)
+    best_id, best = None, {}
+    for result in list((res or {}).get("entries") or [])[:ALBUM_RESULTS]:
+        if not result or not result.get("url"):
+            continue
+        time.sleep(PAUSE)
+        album = ydl.extract_info(result["url"], download=False)   # album page -> its playlist
+        entries = list((album or {}).get("entries") or [])
+        hits = {i: e for i, (t, e) in enumerate(zip(tracks, entries)) if e and matches(t, e)}
+        if len(hits) > len(best):
+            best_id, best = album.get("id"), hits
+        if len(best) == len(tracks):
+            break
+    # A playlist where most positions don't line up is a different album or edition.
+    if len(best) * 2 < len(tracks):
+        return None, {}
+    return best_id, best
+
+
+def main():
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    release, tracks = data.get("release"), data["tracks"]
+    flat = yt_dlp.YoutubeDL({**findcopy.OPTS, "extract_flat": True})
+    pages = yt_dlp.YoutubeDL({**findcopy.OPTS, "extract_flat": "in_playlist"})
+    full = yt_dlp.YoutubeDL({**findcopy.OPTS, "simulate": True, "format": "bestaudio"})
+
+    from_playlist = {}
+    if release and len(tracks) > 1:
+        try:
+            playlist_id, from_playlist = album_playlist(pages, release, tracks)
+            if playlist_id:
+                print(f"playlist {playlist_id} {len(from_playlist)}/{len(tracks)}", flush=True)
+        except Exception as e:
+            # Not fatal: every track is searched for on its own instead.
+            print(f"note: couldn't search for the album playlist ({' '.join(str(e).split())[:150]})", flush=True)
+
+    searched = 0
+    for i, track in enumerate(tracks):
+        key = track.get("recording_id") or str(i + 1)
+        entry = from_playlist.get(i)
+        if entry:
+            artist = findcopy.clean_artist(entry.get("channel") or entry.get("uploader") or track["artist"])
+            print(f"found {key} {entry['id']} {artist} - {entry.get('title')}", flush=True)
+            continue
+        if searched:
+            time.sleep(PAUSE)
+        searched += 1
+        song = {"id": None, "title": track["title"], "artist": track["artist"], "duration": track.get("length")}
+        try:
+            info = findcopy.find(flat, full, song)
+        except Exception as e:
+            reason = " ".join(str(e).split())[:200] or type(e).__name__
+            print(f"error {key} {reason}", flush=True)
+            continue
+        if info:
+            artist = info.get("artist") or findcopy.clean_artist(info.get("channel"))
+            print(f"found {key} {info['id']} {artist} - {info.get('title')}", flush=True)
+        else:
+            print(f"none {key}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

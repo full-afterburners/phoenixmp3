@@ -36,6 +36,25 @@ This is the technical side. The README in the top folder covers normal use.
 
 The app shows a short summary. Everything each step prints goes to `last-run.log`.
 
+### Downloading by search (backend only, not in the app yet)
+
+Albums and songs can be found by name instead of a YouTube link:
+
+1. `mbsearch.py albums|songs "<text>" ["<artist>"]` searches MusicBrainz
+   (`artists` + `discography` browse an artist; `editions` lists an album's
+   releases with a suggested standard edition; `tracks <release id>` gives the
+   track list). Results are JSON; the user picks one, since another artist's
+   album with the same name can rank first.
+2. `findtracks.py <tracks.json>` finds each track on YouTube Music: from the
+   official album playlist where its positions line up, otherwise one by one with
+   `findcopy.py`'s rules (same artist, same version, length within 10 s). It
+   prints `found` / `none` / `error` per track.
+3. The found video IDs are downloaded like pasted links. After `cleantitles.py`,
+   `presettags.py <search-run.json> newdownloads` writes the picked recording's
+   MusicBrainz ID (and for albums the album, track numbers, year and release
+   IDs) into the files, so beets matches that exact recording and `fillalbums.py`
+   keeps the album.
+
 Downloading too much at once gets you blocked by YouTube for a while (HTTP 403).
 The "pause between songs" setting spaces downloads out to avoid that, and if
 YouTube refuses 3 songs in a row the app stops downloading and tags what it got.
