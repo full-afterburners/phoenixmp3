@@ -1,5 +1,6 @@
 #!/usr/bin/env pythonw
 # phoenixmp3 - GUI for downloading YouTube links and tagging them with beets.
+import collections
 import json
 import os
 import queue
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import urllib.parse
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 
@@ -62,11 +64,14 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 _console_py = Path(sys.executable).with_name("python.exe")
 PY = str(_console_py) if _console_py.exists() else sys.executable
 
-# yt-dlp errors that won't go away by retrying.
+# yt-dlp errors that won't go away by retrying. Kept specific on purpose: an
+# outdated yt-dlp says "Requested format is not available", and a bare "not
+# available" used to mark whole playlists as dead after one broken run.
 _ERR_RE = re.compile(r"ERROR: \[youtube\] ([0-9A-Za-z_-]{11}): (.+)")
-_PERMANENT = ("video unavailable", "not available", "private video", "removed",
-              "copyright", "terminated", "confirm your age", "inappropriate",
-              "members-only", "join this channel")
+_PERMANENT = ("video unavailable", "video is not available", "not made this video available",
+              "private video", "has been removed", "copyright", "terminated",
+              "confirm your age", "inappropriate", "members-only", "join this channel")
+_NOT_PERMANENT = ("requested format", "on this app", "not a bot")
 
 
 # Settings. The output folder is saved as "" (default) or relative to the app
@@ -163,13 +168,26 @@ def record_unavailable(log_lines):
     found = {}
     for ln in log_lines:
         m = _ERR_RE.search(ln)
-        if m and m.group(1) not in known and any(p in m.group(2).lower() for p in _PERMANENT):
+        if not m or m.group(1) in known:
+            continue
+        why = m.group(2).lower()
+        if any(p in why for p in _PERMANENT) and not any(p in why for p in _NOT_PERMANENT):
             found[m.group(1)] = m.group(2).strip()
     if found:
         with UNAVAILABLE.open("a", encoding="utf-8") as f:
             for vid, why in found.items():
                 f.write(f"{vid}  # {why}\n")
     return len(found)
+
+
+def is_youtube_link(url):
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    host = (u.hostname or "").lower()
+    return u.scheme in ("http", "https") and (
+        host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com"))
 
 
 def replacements():
@@ -272,6 +290,7 @@ class App:
         self.busy = False
         self.proc = None        # the step currently running
         self.stopping = False   # Stop was clicked
+        self.failed = []        # steps that crashed this run: "name (reason)"
         self.cut_step = False   # end the current step early (YouTube blocking)
         self.titles = {}        # video id -> title, for error messages
         self.songs = {}         # video id -> title, channel, length
@@ -515,6 +534,12 @@ class App:
         if not url:
             messagebox.showwarning("No link", "Paste a YouTube link first.")
             return None
+        if not is_youtube_link(url):
+            messagebox.showwarning("Not a YouTube link",
+                                   "That doesn't look like a YouTube link. It should start "
+                                   "with https://www.youtube.com/, https://music.youtube.com/ "
+                                   "or https://youtu.be/")
+            return None
         return url
 
     # Preview
@@ -532,7 +557,7 @@ class App:
         """Get a link's info and track list from yt-dlp without downloading."""
         out = subprocess.run(
             [PY, str(YTDLP), "--flat-playlist", "--dump-single-json",
-             "--remote-components", "ejs:github", url],
+             "--remote-components", "ejs:github", "--", url],
             capture_output=True, text=True, env=child_env(),
             creationflags=NO_WINDOW, timeout=120,
         )
@@ -734,8 +759,11 @@ class App:
                              env=child_env(), creationflags=NO_WINDOW, bufsize=1)
         self.proc = p
         self.cut_step = False
+        tail = collections.deque(maxlen=5)
         for line in p.stdout:
             runlog(line)
+            if line.strip():
+                tail.append(line.strip())
             if keep is not None:
                 keep.append(line)
             if show is not None:
@@ -747,6 +775,17 @@ class App:
                 break
         p.wait()
         self.proc = None
+        # yt-dlp exits with 1 whenever any song failed (--ignore-errors), which
+        # is normal and reported per song, so only the other steps count here.
+        if p.returncode and not self.stopping and not self.cut_step and cmd[1] != str(YTDLP):
+            name = f"beets {cmd[4]}" if cmd[1] == "-m" else Path(cmd[1]).name
+            # The error line, not just the last line: buffered output can land
+            # after the traceback.
+            errs = [ln for ln in tail if self._only_problems(ln) and "traceback" not in ln.lower()]
+            why = (errs or list(tail) or [f"exit code {p.returncode}"])[-1]
+            self.failed.append(f"{name} ({why})")
+            runlog(f"!! {name} failed with exit code {p.returncode}\n")
+            self.q.put(("log", f"  Problem: {name} crashed: {why}"))
         return p.returncode
 
     def _yt_filter(self):
@@ -805,7 +844,7 @@ class App:
         them. Returns (songs downloaded this way, songs still unavailable)."""
         look, get = self._swap_work(plists)
         names = {x["id"]: x["title"] for x in look}
-        n_none = 0
+        n_none = n_err = 0
         if look:
             self.q.put(("log", f"Looking for another copy of {plural(len(look), 'unavailable song')}"))
             data = PIPELINE / "findcopy-run.json"
@@ -813,13 +852,19 @@ class App:
             done = [0]
 
             def show(line):
-                nonlocal n_none
+                nonlocal n_none, n_err
                 parts = line.split(" ", 3)
-                if parts[0] not in ("found", "none") or len(parts) < 2 or parts[1] not in names:
+                if (parts[0] not in ("found", "none", "error") or len(parts) < 2
+                        or parts[1] not in names):
                     return self._only_problems(line)
                 done[0] += 1
                 self.q.put(("status", f"Looking for another copy {done[0]} of {len(look)}"))
                 old = parts[1]
+                if parts[0] == "error":
+                    # Not written to replaced.txt, so it's searched again next run.
+                    n_err += 1
+                    why = line.split(" ", 2)[2] if len(parts) > 2 else "unknown error"
+                    return f"  Couldn't search for {names[old]} ({why}), will try again next time"
                 with REPLACED.open("a", encoding="utf-8") as f:
                     if parts[0] == "found" and len(parts) == 4:
                         f.write(f"{old} {parts[2]}  # {parts[3]}\n")
@@ -831,6 +876,7 @@ class App:
                 return f"  No other copy found: {names[old]}"
 
             self._stream([PY, str(PIPELINE / "findcopy.py"), str(data)], show=show)
+            n_none += n_err  # still unavailable this run, just not remembered
         elif n_dead:
             self.q.put(("log", f"  {n_dead} unavailable on YouTube, will be skipped next time"))
             n_none = n_dead
@@ -857,14 +903,17 @@ class App:
     @staticmethod
     def _only_problems(line):
         low = line.lower()
-        # Needs the colon so a song called "Human Error" doesn't count.
+        # Needs the colon so a song called "Human Error" doesn't count. No \b in
+        # front, so Python's "ValueError: ..." (the line that says what went
+        # wrong after a traceback) is shown too.
         if ("skipped (" in low or "lookup failed" in low or "traceback" in low
-                or re.search(r"\b(error|exception)\b:", low)):
+                or "couldn't" in low or re.search(r"(error|exception)\b:", low)):
             return f"  Warning: {line.strip()}"
         return None
 
     def _download_worker(self, urls, s=None, label=None, plists=None):
         s = s or load_settings()
+        self.failed = []
         try:
             run_cfg = str(write_run_config(s))
             if s["format"] == "mp3":
@@ -895,7 +944,8 @@ class App:
                     "--no-overwrites", "--ignore-errors", "--newline",
                     "--download-archive", str(ARCHIVE),
                     "-o", str(RAW / "%(title)s [%(id)s].%(ext)s"),
-                    *targets,
+                    # "--" so a link can never be read as an option (--exec etc.)
+                    "--", *targets,
                 ], keep=ytlog, show=show)
                 return st, record_unavailable(ytlog)
 
@@ -935,8 +985,9 @@ class App:
             # them as "already in the library".
             self._stream([PY, str(PIPELINE / "prunelib.py"), run_cfg], show=self._only_problems)
             beets_log = []
-            self._stream([PY, "-m", "beets", "-c", run_cfg, "import", "-q", "-s", str(RAW)],
-                         keep=beets_log, show=self._counter("Tagging", n_files))
+            beets_ok = self._stream([PY, "-m", "beets", "-c", run_cfg, "import", "-q", "-s",
+                                     str(RAW)],
+                                    keep=beets_log, show=self._counter("Tagging", n_files)) == 0
             if self.stopping:
                 self.q.put(("stopped", None))
                 return
@@ -959,7 +1010,8 @@ class App:
             self.q.put(("log", "Step 4 of 4: artists, albums, years and genres"))
             # Songs that kept YouTube's info list songwriters as artists too.
             self._stream([PY, str(PIPELINE / "fixartists.py"), run_cfg], show=self._only_problems)
-            n_matched = n_files - n_asis - len(dupes)
+            # If beets crashed, the songs it didn't get to weren't matched at all.
+            n_matched = n_files - n_asis - len(dupes) if beets_ok else 0
             self.q.put(("status", f"Albums and years 0 of {max(n_matched, 0)}"))
             album_log = []
             self._stream([PY, str(PIPELINE / "fillalbums.py"), run_cfg],
@@ -999,7 +1051,7 @@ class App:
             if n_albums:
                 parts.append(f"{plural(n_albums, 'album')} filled in")
             self.q.put(("log", "Summary: " + ", ".join(parts)))
-            self.q.put(("done", (label, yt["blocked"])))
+            self.q.put(("done", (label, yt["blocked"], list(self.failed))))
         except Exception as e:
             if self.stopping:
                 self.q.put(("stopped", None))
@@ -1030,17 +1082,25 @@ class App:
                                          "Update My Playlists to download them."
                                   if payload else "My Playlists are up to date.")
                 elif kind == "done":
-                    label, blocked = payload
+                    label, blocked, failed = payload
                     got = f" ({label})" if label else ""
+                    head = "Finished with problems" if failed else "Finished"
                     out = out_dir(self.settings)
-                    self.log_line(f"Finished{got}. Songs are in {out}\n"
+                    self.log_line(f"{head}{got}. Songs are in {out}\n"
                                   f"Full details are in pipeline\\{RUNLOG.name}")
-                    self.set_busy(False, f"Finished{got}.")
+                    self.set_busy(False, f"{head}{got}.")
                     note = ("\n\nYouTube started blocking downloads partway through. "
                             "Wait an hour or so, then run it again to get the rest. "
                             "A longer pause between songs in Settings helps avoid this."
                             if blocked else "")
-                    messagebox.showinfo("Finished", f"Finished{got}.\n\nSongs are in:\n{out}{note}")
+                    if failed:
+                        steps = "\n".join(f"- {f}" for f in failed)
+                        messagebox.showwarning(
+                            head, f"{head}{got}.\n\nThese steps crashed, so some songs may not "
+                                  f"be fully tagged:\n{steps}\n\nThe details are in "
+                                  f"pipeline\\{RUNLOG.name}. Songs are in:\n{out}{note}")
+                    else:
+                        messagebox.showinfo(head, f"{head}{got}.\n\nSongs are in:\n{out}{note}")
                 elif kind == "stopped":
                     self.log_line("Stopped. Songs that already finished downloading will be "
                                   "tagged next time you run it.")

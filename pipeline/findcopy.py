@@ -10,6 +10,9 @@
 # seconds of the original length. Prints one line per song:
 #   found <old id> <new id> <artist> - <title>
 #   none <old id>
+#   error <old id> <reason>
+# "none" means the search worked and nothing matched, so the app remembers it.
+# "error" (blocked, offline, yt-dlp broken) isn't remembered and is retried.
 import json
 import re
 import sys
@@ -59,6 +62,7 @@ def find(flat, full, song):
     title, artist, length = song["title"], clean_artist(song["artist"]), song.get("duration")
     q = urllib.parse.quote(f"{artist} {title}")
     res = flat.extract_info(f"https://music.youtube.com/search?q={q}#songs", download=False)
+    failed = None
     for e in list((res or {}).get("entries") or [])[:3]:
         if not e or e.get("id") == song["id"]:
             continue
@@ -68,7 +72,8 @@ def find(flat, full, song):
         # checks that the copy can actually be downloaded.
         try:
             info = full.extract_info(f"https://www.youtube.com/watch?v={e['id']}", download=False)
-        except Exception:
+        except Exception as err:
+            failed = err  # this candidate may be dead too, try the next one
             continue
         names = [info.get("artist"), info.get("creator"), info.get("channel"),
                  info.get("uploader"), *(info.get("artists") or [])]
@@ -77,6 +82,9 @@ def find(flat, full, song):
         if length and info.get("duration") and abs(info["duration"] - length) > 10:
             continue
         return info
+    if failed:
+        # A title match that couldn't be checked isn't a real "no copy".
+        raise failed
     return None
 
 
@@ -89,8 +97,10 @@ def main():
             time.sleep(1.5)
         try:
             info = find(flat, full, song)
-        except Exception:
-            info = None
+        except Exception as e:
+            reason = " ".join(str(e).split())[:200] or type(e).__name__
+            print(f"error {song['id']} {reason}", flush=True)
+            continue
         if info:
             artist = info.get("artist") or clean_artist(info.get("channel"))
             print(f"found {song['id']} {info['id']} {artist} - {info.get('title')}", flush=True)

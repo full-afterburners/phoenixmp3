@@ -150,9 +150,14 @@ def main():
 
         if item.album and not item.albumartist:
             item.albumartist = item.artist
+        if not item.try_write():
+            # Locked (open in a player, syncing) or read-only. Not stored and
+            # not flagged, so the library still matches the file and it's
+            # looked up again next run.
+            print(f"  album: couldn't write tags, will try again next time - {name}", flush=True)
+            continue
         item[DONE_FLAG] = 1
         item[SINGLE_FLAG] = 1
-        item.try_write()
         try:
             item.move()  # a new album means a new folder with the folder layout
         except Exception as e:

@@ -93,8 +93,11 @@ def main():
             if not pretend and (item.artist_sort != item.artist
                                 or item.albumartist_sort != item.albumartist):
                 item.artist_sort, item.albumartist_sort = item.artist, item.albumartist
-                item.try_write()
-                item.store()
+                if item.try_write():
+                    item.store()
+                else:
+                    print(f"  artist: couldn't write tags - {item.artist} - {item.title}",
+                          flush=True)
             continue
         artist, title = credits(item)
         changed = (artist, title) != (item.artist, item.title)
@@ -105,7 +108,13 @@ def main():
         item.artist, item.title = artist, title
         item.albumartist = artist
         item.artist_sort = item.albumartist_sort = artist
-        item.try_write()
+        if not item.try_write():
+            # Locked (open in a player, syncing) or read-only. Not stored and
+            # not flagged, so the library still matches the file and it's
+            # tried again next run.
+            print(f"  artist: couldn't write tags, will try again next time - {artist} - {title}",
+                  flush=True)
+            continue
         if changed:
             try:
                 item.move()  # the file name has the artist and title in it

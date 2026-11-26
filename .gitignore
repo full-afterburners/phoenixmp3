@@ -26,3 +26,9 @@ dist/
 /phoenixmp3.exe
 __pycache__/
 *.pyc
+
+# Claude Code project notes (for benny boo only)
+CLAUDE.md
+
+# Local dev tools and data (genre picker prototype, library tags)
+dev/

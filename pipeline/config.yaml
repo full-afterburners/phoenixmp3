@@ -48,9 +48,11 @@ lastgenre:
   whitelist: genres.txt
   force: no
   title_case: yes
-  # Tags the genre tree doesn't place under a broad genre. Checked first,
-  # whole tag only, lowercase.
-  aliases:
+  # The genre tree decides first (with beets' built-in spelling aliases, so
+  # "alt-rock" or "shoegazing" are recognised). These are only used for songs
+  # whose tags the tree doesn't know at all ("metal", "edm", "reggaeton"...).
+  # Whole tag only, lowercase, checked top to bottom. fillgenres.py reads this.
+  fallbacks:
     rock:
       - (.+[ -])?metal(core)?
       - (.+[ -])?punk( rock)?

@@ -43,7 +43,7 @@ Write-Host "`nDownloading" -ForegroundColor Cyan
     --no-overwrites --ignore-errors `
     --download-archive (Join-Path $Pipeline "downloaded.txt") `
     --output "$Raw\%(title)s [%(id)s].%(ext)s" `
-    $Url
+    -- $Url
 if ($LASTEXITCODE -ne 0) { Write-Warning "yt-dlp exited with code $LASTEXITCODE, some tracks may have failed." }
 
 Write-Host "`nFixing cover art and titles" -ForegroundColor Cyan
