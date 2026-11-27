@@ -97,7 +97,10 @@ app until the new one can do everything. Run it with `.\python\pythonw.exe app.p
   ones wait for "Download Anyway", and `presettags.py` writes the picked album
   and recording into the files after `cleantitles.py`. The other steps are the
   classic window's, in the same order, using its helpers (imported from
-  `gui.pyw`). A download and a genre re-file never run at the same time.
+  `gui.pyw`). A download started while another runs waits in a queue (kept in
+  memory only, so closing the app forgets it); Activity lists it under Up Next.
+  Stop ends the running one and the next starts; Stop All also empties the
+  queue. A download and a genre re-file never run at the same time.
 - My Playlists (`myplaylists.py`) reads and edits `playlists.txt`, keeping
   its comments; a "# Name" line right above a link names it. Update runs
   the classic window's Update My Playlists as a download job

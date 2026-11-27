@@ -128,6 +128,40 @@ try {
   check("Download asks Python for just the ticked song", pickIndex >= 0 && await waitFor(`!!window.__job`, 3000) &&
     await js(`window.__job.kind === 'album' && window.__job.picks.length === 1 && window.__job.picks[0] === ${pickIndex} && /^[0-9a-f-]{36}$/.test(window.__job.release_id)`),
     await js(`JSON.stringify(window.__job || null)`));
+  // A second download while one runs joins the queue (faked status: one running, one waiting)
+  await js(`history.back()`);
+  await waitFor(`!!document.getElementById('albumDownload')`, 30000);
+  await js(`(() => { const boxes = [...document.querySelectorAll('#albumPage tbody input.chk')];
+    boxes.forEach(c => { if (c.checked) c.click(); }); boxes.find(c => !c.disabled)?.click(); })()`);
+  await js(`(() => {
+    const st = { running: true, seq: 5, label: 'Running Album · Someone', kind: 'album', release_id: null, result: null, summary: '',
+      problems: [], now: 'Downloading', progress: 0.3, steps: [{ key: 'download', name: 'Download', state: 'active', done: 0, total: 2 }],
+      songs: [], log: [], queue: [{ qid: 7, label: 'Queued Album · Someone', kind: 'album' }],
+      finished: [{ seq: 4, label: 'Earlier Album · Someone', result: 'done', summary: '2 new songs' }] };
+    const api = window.pywebview.api;
+    window.__real = { start: api.start_download, status: api.download_status, unqueue: api.unqueue_download, stop: api.stop_download };
+    window.__fakeSt = st;
+    api.start_download = () => Promise.resolve({ ...st, queued: true });
+    api.download_status = () => Promise.resolve(window.__fakeSt);
+    api.unqueue_download = qid => { window.__unqueued = qid; window.__fakeSt = { ...st, queue: [] }; return Promise.resolve(true); };
+    api.stop_download = everything => { window.__stopAll = everything; return Promise.resolve(true); };
+  })()`);
+  await js(`document.getElementById('albumDownload').click()`);
+  check("a download while one runs says it was queued and stays on the page",
+    await waitFor(`/Added to the queue/.test(document.getElementById('toast').textContent)`, 3000) &&
+    await js(`!!document.getElementById('albumDownload')`), await js(`document.getElementById('toast').textContent`));
+  await js(`location.hash = 'activity'`);
+  check("Activity lists the queue and earlier downloads", await waitFor(`/Queued Album/.test(document.getElementById('runQueue')?.innerText || '')
+    && /Earlier Album/.test(document.getElementById('runEarlier')?.innerText || '')`, 5000), await js(`document.getElementById('view').innerText.slice(0, 300)`));
+  await js(`document.getElementById('stopAll').click()`);
+  check("Stop All asks Python to stop the queue too", await waitFor(`window.__stopAll === true`, 3000));
+  await js(`[...document.querySelectorAll('#runQueue button')].find(b => b.textContent === 'Remove').click()`);
+  check("Remove takes a download out of the queue", await waitFor(`window.__unqueued === 7 && !document.getElementById('runQueue')`, 5000));
+  await js(`(() => { const api = window.pywebview.api, r = window.__real;
+    window.__fakeSt = { ...window.__fakeSt, running: false, result: 'done', summary: 'test' };   // lets the page's poll end
+    setTimeout(() => { api.start_download = r.start; api.download_status = r.status; api.unqueue_download = r.unqueue; api.stop_download = r.stop; }, 2000);
+  })()`);
+  await new Promise(r => setTimeout(r, 2500));
   await js(`location.hash = 'artists'`);
   await waitFor(`document.querySelectorAll('#view .avatar').length > 0`);
   await js(`document.querySelector('#view .avatar').click()`);

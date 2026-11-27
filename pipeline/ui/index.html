@@ -1670,10 +1670,21 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   let dl = null, dlWatching = false, dlLogOpen = false;
   const STEP_VERB = { find: "Finding songs on YouTube Music", download: "Downloading", clean: "Cleaning titles and art",
     tag: "Matching on MusicBrainz", albums: "Albums and years", genres: "Genres from Last.fm" };
+  // A download started while one runs waits in Python's queue; Activity lists it under Up Next.
   function startDownload(job) {
-    if (dl && dl.running) { toast("A download is already running"); go("activity"); return Promise.resolve(); }
-    return apiReady.then(() => window.pywebview.api.start_download(job))
-      .then(st => { dl = st; dlLogOpen = false; watchDownload(); go("activity"); }, e => toast(`Couldn't start the download (${errText(e)})`));
+    return apiReady.then(() => window.pywebview.api.start_download(job)).then(st => {
+      if (st.queued) {
+        dl = st; dlLcd(); drawRun(); watchDownload();
+        toast(`Added to the queue: ${st.queue.length === 1 ? "next up" : `${st.queue.length} waiting`}`);
+        return;
+      }
+      dl = st; dlLogOpen = false; watchDownload(); go("activity");
+    }, e => toast(`Couldn't start the download (${errText(e)})`));
+  }
+  function downloadEnded(f, kind) {   // one download finished: its songs are in the library now
+    if (kind === "playlists") plChecks.clear();   // counts changed: check them again next time
+    if (f) toast(f.result === "done" ? `Finished: ${f.summary}` : f.summary || "The download ended");
+    reloadLibrary().catch(e => toast(`Couldn't reload the library (${errText(e)})`));
   }
   function watchDownload() {
     if (dlWatching) return;
@@ -1682,13 +1693,16 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const tick = () => window.pywebview.api.download_status().then(st => {
       if (!st.steps) { dlWatching = false; return; }   // nothing has run in this window: nothing to show or reload
       const changed = JSON.stringify(st) !== JSON.stringify(dl);
+      const prev = dl;
       dl = st; dlLcd();
+      if (prev && prev.running && st.running && prev.seq !== st.seq) {   // one ended and the next in the queue began
+        dlLogOpen = false;
+        downloadEnded((st.finished || []).find(f => f.seq === prev.seq), prev.kind);
+      }
       if (changed) drawRun();
       if (st.running) { setTimeout(tick, 800); return; }
       dlWatching = false;
-      if (st.kind === "playlists") plChecks.clear();   // counts changed: check them again next time
-      toast(st.result === "done" ? `Finished: ${st.summary}` : st.summary || "The download ended");
-      reloadLibrary().catch(e => toast(`Couldn't reload the library (${errText(e)})`));
+      downloadEnded(st, st.kind);
     }, e => { dlWatching = false; toast(`Lost track of the download (${errText(e)})`); });
     tick();
   }
@@ -1697,7 +1711,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const step = dl.steps.find(s => s.state === "active");
     $("lcdTitle").textContent = !step ? "Starting" : step.key === "download" && step.total
       ? `Downloading ${Math.min(step.done + 1, step.total)} of ${step.total}` : STEP_VERB[step.key];
-    $("lcdSub").textContent = dl.now || dl.label;
+    const waiting = (dl.queue || []).length;
+    $("lcdSub").textContent = (dl.now || dl.label) + (waiting ? ` · ${waiting} up next` : "");
     $("lcdBar").style.width = Math.round((dl.progress || 0) * 100) + "%";
   }
   const SONG_CHIP = {
@@ -1708,7 +1723,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   };
   function runSong(s) {
     const [cls, text] = SONG_CHIP[s.state] || ["mute", s.state];
-    const anyway = s.state === "unsure" && !dl.running && dl.release_id ? h("button", { class: "btn small", type: "button",
+    const anyway = s.state === "unsure" && dl.release_id ? h("button", { class: "btn small", type: "button",
       title: "MusicBrainz has no length for this song, so only the title and artist were matched",
       onclick: () => startDownload({ kind: "album", release_id: dl.release_id, picks: [{ i: s.i, video: s.video }] }) }, "Download Anyway") : null;
     // the YouTube match is only worth showing when it isn't simply "artist - title" again
@@ -1722,8 +1737,13 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     if (!box || !dl || !dl.steps) return;
     const logScroll = box.querySelector(".log")?.scrollTop;
     const title = dl.running ? "Working…" : dl.result === "done" ? "Finished" : dl.result === "stopped" ? "Stopped" : "Stopped with a problem";
+    const queue = dl.queue || [];
+    const stop = everything => window.pywebview.api.stop_download(everything)
+      .then(() => toast(everything ? "Stopping everything…" : queue.length ? "Stopping… the next one starts after" : "Stopping…"),
+        e => toast(`Couldn't stop (${errText(e)})`));
     const kids = [head(title, dl.label,
-      dl.running ? h("button", { class: "btn", type: "button", id: "stopDownload", onclick: () => window.pywebview.api.stop_download().then(() => toast("Stopping…")) }, icon("x"), "Stop")
+      dl.running && queue.length ? h("button", { class: "btn ghost", type: "button", id: "stopAll", onclick: () => stop(true) }, "Stop All") : null,
+      dl.running ? h("button", { class: "btn", type: "button", id: "stopDownload", onclick: () => stop(false) }, icon("x"), "Stop")
         : h("button", { class: "btn primary", type: "button", onclick: () => go("get") }, icon("get"), "Get More Music"))];
     if (!dl.running) kids.push(h("div", { class: "summary" + (dl.result === "done" && !dl.problems.length ? "" : " warn") },
       h("div", {}, h("b", {}, dl.summary || title),
@@ -1736,6 +1756,20 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     })));
     if (dl.running && dl.now) kids.push(h("p", { class: "note", style: "margin:-10px 0 14px" }, dl.now));
     kids.push(h("div", { class: "runlist", id: "runSongs" }, dl.songs.map(runSong)));
+    const KIND = { album: "Album", links: "YouTube link", playlists: "Playlist update" };
+    if (queue.length) kids.push(h("h2", { class: "section-title" }, "Up Next"), h("div", { class: "runlist", id: "runQueue" },
+      queue.map(q => h("div", { class: "runrow" }, placeholder(q.label), h("div", {}, h("b", {}, q.label), h("small", {}, q.kind === "links" && q.urls.length ? q.urls.join(" · ") : KIND[q.kind] || "")),
+        h("div", { class: "act" }, h("button", { class: "btn ghost small", type: "button", title: "Take it out of the queue",
+          onclick: () => window.pywebview.api.unqueue_download(q.qid).then(gone => {
+            toast(gone ? "Removed from the queue" : "It already started");
+            return window.pywebview.api.download_status().then(st => { dl = st; dlLcd(); drawRun(); });
+          }, e => toast(`Couldn't remove it (${errText(e)})`)) }, "Remove"))))));
+    // downloads that finished earlier in this session (the newest is the one shown above once all are done)
+    const earlier = (dl.finished || []).filter(f => f.seq !== dl.seq || dl.running);
+    const CHIP = { done: ["ok", "Finished"], stopped: ["mute", "Stopped"], failed: ["bad", "Problem"] };
+    if (earlier.length) kids.push(h("h2", { class: "section-title" }, "Earlier"), h("div", { class: "runlist", id: "runEarlier" },
+      earlier.map(f => h("div", { class: "runrow" }, placeholder(f.label), h("div", {}, h("b", {}, f.label), h("small", {}, f.summary || "")),
+        h("div", { class: "act" }, h("span", { class: "chip " + (CHIP[f.result] || CHIP.failed)[0] }, (CHIP[f.result] || CHIP.failed)[1]))))));
     const logBox = h("pre", { class: "log", hidden: !dlLogOpen }, dl.log.join("\n") || "Nothing yet");
     kids.push(h("button", { class: "btn ghost", type: "button", style: "margin-top:10px", onclick: () => { dlLogOpen = !dlLogOpen; logBox.hidden = !dlLogOpen; } }, "Show Log"), logBox);
     box.replaceChildren(...kids);
@@ -2064,7 +2098,9 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     // a re-file started before the page reloaded keeps running in Python: show its progress again
     if (IN_APP) window.pywebview.api.refile_status().then(st => { if (st.running) watchRefile(); }, () => {});
     // the same for a download started before a reload
-    if (IN_APP) window.pywebview.api.download_status().then(st => { if (st.running) { dl = st; watchDownload(); } }, () => {});
+    if (IN_APP) window.pywebview.api.download_status().then(st => { if (st.running) { dl = st; watchDownload();
+      if ((location.hash || "").startsWith("#activity")) route();   // already on Activity: show the run, not the last summary
+    } }, () => {});
     // The theme is kept in Python too (app-prefs.json): WebView2 can lose a just-saved localStorage value
     if (IN_APP) window.pywebview.api.get_settings().then(r => {
       if (!r.theme) return window.pywebview.api.set_theme(theme);   // first start: keep the one the page remembered

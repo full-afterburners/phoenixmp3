@@ -1,5 +1,5 @@
 # Downloads for the new app window (app.pyw), run in the background while the window
-# polls status(). Two kinds:
+# polls status(). A download started while one runs waits in a queue. Kinds:
 #  - "links": YouTube links (a song or playlist), like the classic window's Download.
 #  - "album": songs picked on an album page of the search. findtracks.py finds each
 #    on YouTube Music first; "found" ones are downloaded, "unsure" ones (MusicBrainz
@@ -13,6 +13,7 @@
 # are imported from gui.pyw so both windows behave the same.
 # KEEP IN STEP with gui.pyw's _download_worker and get-music.ps1 when steps change.
 import collections
+import datetime
 import json
 import re
 import subprocess
@@ -32,6 +33,8 @@ MAX_URLS = 20
 MAX_TRACKS = 200
 REFUSED_LIMIT = 3        # YouTube refusing this many songs in a row: stop downloading, tag what came
 LOG_KEEP = 300
+MAX_QUEUE = 20           # downloads waiting behind the running one
+FINISHED_KEEP = 10       # finished downloads listed in Activity
 VIDEO_ID = re.compile(r"^[0-9A-Za-z_-]{11}$")
 ID_IN_NAME = re.compile(r"\[([0-9A-Za-z_-]{11})\]")
 # How much of the bar each step fills
@@ -100,8 +103,16 @@ def parse_job(job) -> dict:
     raise ValueError("unknown kind of download")
 
 
+def _job_key(job: dict) -> str:
+    """What makes two checked jobs the same download, to refuse queueing one twice."""
+    return json.dumps({"kind": job["kind"], "urls": job.get("urls"), "picks": job.get("picks"),
+                       "release": (job.get("release") or {}).get("id")}, sort_keys=True)
+
+
 class DownloadRun:
-    """One download at a time, in the background."""
+    """One download at a time, in the background. Downloads started while one runs wait in a
+    queue (in memory: closing the app forgets it) and start one after another; the run never
+    shows as "not running" between two of them, so a re-file or a settings change can't slip in."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -109,6 +120,10 @@ class DownloadRun:
         self._stopping = False
         self._cut = False      # a filter decided to end the current step early
         self._state: dict = {"running": False, "seq": 0}
+        self._key = ""         # _job_key of the running download
+        self._queue: list[dict] = []      # [{"qid", "key", "job"}], next first
+        self._finished: list[dict] = []   # [{"seq", "label", "result", "summary"}], newest first
+        self._qid = 0
 
     # ---------- for the window ----------
 
@@ -117,27 +132,33 @@ class DownloadRun:
             return self._state["running"]
 
     def start(self, job: dict) -> dict:
-        """job: a checked job from parse_job() (which may ask MusicBrainz, so callers do it before locking)."""
+        """job: a checked job from parse_job() (which may ask MusicBrainz, so callers do it before locking).
+        Starts it, or queues it behind the running one; the answer's "queued" says which."""
+        key = _job_key(job)
         with self._lock:
-            if self._state["running"]:
-                raise ValueError("a download is already running")
-            album = job["kind"] == "album"
-            songs = [{"i": i, "title": job["tracks"][i]["title"], "artist": job["tracks"][i]["artist"],
-                      "video": v, "state": "found" if v else "queued", "note": ""} for i, v in sorted(job["picks"].items())] if album else []
-            self._stopping, self._cut = False, False
-            self._state = {
-                "running": True, "seq": self._state["seq"] + 1, "label": job["label"], "kind": job["kind"],
-                "release_id": job["release"]["id"] if album else None, "result": None, "summary": "", "problems": [],
-                "now": "Starting", "steps": [_first_step(k, n, job, gui.load_settings()) for k, n, _ in STEPS],
-                "songs": songs, "log": [],
-            }
-        threading.Thread(target=self._worker, args=(job,), daemon=True).start()
-        return self.status()
+            queued = self._state["running"]
+            if queued:
+                if key == self._key:
+                    raise ValueError("that's downloading right now")
+                if any(q["key"] == key for q in self._queue):
+                    raise ValueError("that's already waiting in the queue")
+                if len(self._queue) >= MAX_QUEUE:
+                    raise ValueError(f"the queue is full ({MAX_QUEUE} downloads); add more when some have finished")
+                self._qid += 1
+                self._queue.append({"qid": self._qid, "key": key, "job": job})
+            else:
+                self._begin(job, key)
+        if not queued:
+            threading.Thread(target=self._worker, args=(job, False), daemon=True).start()
+        return {**self.status(), "queued": queued}
 
-    def stop(self) -> bool:
+    def stop(self, everything: bool = False) -> bool:
+        """Stop the running download; the next queued one then starts, unless everything=True."""
         with self._lock:
             if not self._state["running"]:
                 return False
+            if everything:
+                self._queue = []
             self._stopping = True
             proc = self._proc
             self._state["now"] = "Stopping…"
@@ -145,12 +166,60 @@ class DownloadRun:
             gui.kill_tree(proc.pid)
         return True
 
+    def unqueue(self, qid) -> bool:
+        """Take a waiting download out of the queue. False if it already started (or never was)."""
+        with self._lock:
+            before = len(self._queue)
+            self._queue = [q for q in self._queue if q["qid"] != qid]
+            return len(self._queue) < before
+
     def status(self) -> dict:
         with self._lock:
             st = json.loads(json.dumps(self._state))
+            st["queue"] = [{"qid": q["qid"], "label": q["job"]["label"], "kind": q["job"]["kind"],
+                            "urls": q["job"]["urls"] if q["job"]["kind"] == "links" else []} for q in self._queue]
+            st["finished"] = [dict(f) for f in self._finished]
         if "steps" in st:
             st["progress"] = _progress(st["steps"])
         return st
+
+    def _begin(self, job: dict, key: str) -> None:
+        """Make job the running download. Under the lock; the caller starts its worker thread."""
+        album = job["kind"] == "album"
+        songs = [{"i": i, "title": job["tracks"][i]["title"], "artist": job["tracks"][i]["artist"],
+                  "video": v, "state": "found" if v else "queued", "note": ""} for i, v in sorted(job["picks"].items())] if album else []
+        steps = [_first_step(k, n, job, gui.load_settings()) for k, n, _ in STEPS]   # may raise: before changing anything
+        self._stopping, self._cut, self._key = False, False, key
+        self._state = {
+            "running": True, "seq": self._state["seq"] + 1, "label": job["label"], "kind": job["kind"],
+            "release_id": job["release"]["id"] if album else None, "result": None, "summary": "", "problems": [],
+            "now": "Starting", "steps": steps, "songs": songs, "log": [],
+        }
+
+    def _end(self, result: str) -> None:
+        """The running download is over: record it, then start the next queued one, if any."""
+        nxt = None
+        with self._lock:
+            st = self._state
+            for x in st["steps"]:
+                if x["state"] == "active":
+                    x["state"] = "stopped"
+                elif x["state"] == "waiting":   # never got to it
+                    x["state"] = "notrun"
+            self._finished = ([{"seq": st["seq"], "label": st["label"], "result": result, "summary": st["summary"]}]
+                              + self._finished)[:FINISHED_KEEP]
+            while self._queue and nxt is None:
+                q = self._queue.pop(0)
+                try:
+                    self._begin(q["job"], q["key"])
+                    nxt = q["job"]
+                except Exception as e:   # noqa: BLE001 - e.g. settings.json unreadable: skip that one, keep the queue going
+                    gui.runlog(f"!! couldn't start the queued download {q['job']['label']}: {type(e).__name__}: {e}\n")
+            if nxt is None:
+                st.update(running=False, result=result, now="")
+                self._key = ""
+        if nxt is not None:
+            threading.Thread(target=self._worker, args=(nxt, True), daemon=True).start()
 
     # ---------- state, under the lock ----------
 
@@ -468,12 +537,15 @@ class DownloadRun:
         return {"files": n_files, "dupes": len(dupes), "asis": n_asis, "matched": n_matched,
                 "albums": sum(1 for ln in album_log if 'album "' in ln)}
 
-    def _worker(self, job: dict) -> None:
+    def _worker(self, job: dict, queued: bool) -> None:
         result = "failed"
         try:
             s = gui.load_settings()
             run_cfg = str(gui.write_run_config(s))
-            gui.App.start_runlog(f"New window: {job['label']}")
+            if queued:   # one log for the whole queue: don't wipe the download before this one
+                gui.runlog(f"\n{datetime.datetime.now():%Y-%m-%d %H:%M}  Next in the queue: {job['label']}")
+            else:
+                gui.App.start_runlog(f"New window: {job['label']}")
             preset, plists, targets = None, None, list(job.get("urls") or [])
             if job["kind"] == "playlists":
                 plan = playlistrun.check(self, job)
@@ -527,13 +599,7 @@ class DownloadRun:
             self._problem(f"{type(e).__name__}: {e}")
             self._set(summary="The download stopped with a problem.")
         finally:
-            with self._lock:
-                self._state.update(running=False, result=result, now="")
-                for x in self._state["steps"]:
-                    if x["state"] == "active":
-                        x["state"] = "stopped"
-                    elif x["state"] == "waiting":   # never got to it
-                        x["state"] = "notrun"
+            self._end(result)
 
 
 def _first_step(key: str, name: str, job: dict, s: dict) -> dict:

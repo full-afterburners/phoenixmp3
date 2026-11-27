@@ -77,7 +77,7 @@ class Api:
 
     def start_download(self, job: dict) -> dict:
         """job: {"kind": "links", "urls": [...]}, {"kind": "album", "release_id", "picks": [...]} or
-        {"kind": "playlists", "urls": [...]}."""
+        {"kind": "playlists", "urls": [...]}. Queued behind a running download ("queued": true)."""
         checked = _logged("checking a download", downloadrun.parse_job, job)   # may ask MusicBrainz: not under the lock
         with self._busy:
             if self._refile.running():
@@ -87,8 +87,13 @@ class Api:
     def download_status(self) -> dict:
         return self._downloads.status()
 
-    def stop_download(self) -> bool:
-        return self._downloads.stop()
+    def stop_download(self, everything: bool = False) -> bool:
+        """Stop the running download; the next queued one starts unless everything is True."""
+        return self._downloads.stop(everything is True)
+
+    def unqueue_download(self, qid: int) -> bool:
+        """Take a download that hasn't started yet out of the queue."""
+        return self._downloads.unqueue(qid)
 
     def refile_library(self) -> None:
         """Re-file every song's genre with the settings in use (Preferences > Re-file my library)."""
