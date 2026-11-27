@@ -88,7 +88,9 @@ what the steps share with the window is in `core.py`.)
   capsule.
 - Get Music searches MusicBrainz live (`musicinfo.py`, using `mbsearch.py`).
   Last.fm is asked first, because its search is ordered by listeners and
-  MusicBrainz free text can miss the famous song entirely. Clicking an artist
+  MusicBrainz free text can miss the famous song entirely. Artists are ranked
+  yours first, then exact name matches, then by Last.fm listeners (matched by
+  MusicBrainz id, so a famous band's numbers don't rub off on lookalikes). Clicking an artist
   opens their profile: MusicBrainz facts and releases, a Wikimedia Commons photo,
   and Last.fm bio, tags and top songs. Albums open with their editions and track
   list. Profiles and album pages are cached for a week in `cache/`.

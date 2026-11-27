@@ -1672,10 +1672,12 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       own ? h("span", { class: "chip ok" }, icon("check"), `${plural(own.songs.length, "song")} in library`) : null,
       () => { mbFocus = null; go("mbalbum-" + r.id); });
   }
+  // Last.fm listeners, short: 7.8M, 83K, 950
+  const listeners = n => !n ? "" : (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n)) + " listeners";
   function songResult(r) {
     const have = libHas(r.title, r.artist_id, r.artist_names);
     return liveRow(remoteArt(r.album_id && caa(r.album_id), r.album || r.title), r.title,
-      sep(artistLink(r.artist, r.artist_id), r.album, r.year, r.length ? mins(r.length) : ""),
+      sep(artistLink(r.artist, r.artist_id), r.album, r.year, r.length ? mins(r.length) : "", listeners(r.listeners)),
       have ? h("span", { class: "chip ok" }, icon("check"), "In library") : r.disambiguation ? h("span", { class: "chip mute" }, r.disambiguation) : null,
       () => {
         if (!r.album_id) { toast("MusicBrainz doesn't list an album for this recording"); return; }
@@ -1685,7 +1687,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   function artistResult(r) {
     const mine = libByMbid.get(r.id);
     const art = mine && mine.albums[0].cover ? h("img", { class: "art round", src: mine.albums[0].cover, alt: "" }) : placeholder(r.name, "art art-ph round");
-    return liveRow(art, r.name, sep(r.type, r.area, r.years, r.disambiguation),
+    return liveRow(art, r.name, sep(listeners(r.listeners), r.type, r.area, r.years, r.disambiguation),
       mine ? h("span", { class: "chip ok" }, icon("check"), `In library · ${plural(mine.songs, "song")}`) : null,
       () => go("mbartist-" + r.id));
   }

@@ -105,18 +105,18 @@ def search(kind: str, text: str, artist: str | None = None) -> list[dict]:
         raise ValueError("bad artist name")
     text, artist = text.strip(), (artist or "").strip() or None
     if kind == "artists":
-        return popular_first(kind, lastfm_search(kind, text), mbsearch.search_artists(api(), text)["results"])
+        return rank_artists(text, lastfm_search(kind, text), mbsearch.search_artists(api(), text)["results"])[:mbsearch.LIMIT]
     popular = lastfm_search(kind, text, artist)
     if artist:
         rows = SEARCHES[kind](api(), text, artist)["results"]
     else:
         # MusicBrainz's free-text search can miss the famous one entirely (25 obscure songs called
         # "Fade Into You", no Mazzy Star), so first ask for the title by Last.fm's most played artists.
-        top = list(dict.fromkeys(a for a, _ in popular if a))[:POPULAR_ARTISTS]
+        top = list(dict.fromkeys(f["artist"] for f in popular if f["artist"]))[:POPULAR_ARTISTS]
         rows = SEARCHES[kind](api(), text, top, limit=WIDE)["results"] if top else []
         # MusicBrainz matches any word of the title, so "tickets to my downfall" by mgk also finds
         # "times of my life": keep what Last.fm named, or titles with every word typed
-        named, words = {_key(a, t) for a, t in popular}, set(_key(text).split())
+        named, words = {_key(f["artist"], f["title"]) for f in popular}, set(_key(text).split())
         rows = [r for r in rows if _key(r["artist"], r["title"]) in named or words <= set(_key(r["title"]).split())]
         if len(rows) < ENOUGH:   # little-known music: MusicBrainz's own matches fill up the list
             seen = {r["id"] for r in rows}
@@ -155,8 +155,10 @@ LASTFM_SEARCH = {"songs": ("track.search", "track", "trackmatches", "track"),
                  "artists": ("artist.search", "artist", "artistmatches", "artist")}
 
 
-def lastfm_search(kind: str, text: str, artist: str | None = None) -> list[tuple[str, str]]:
-    """(artist, title) pairs from Last.fm's search, most listened first ("" title for artists).
+def lastfm_search(kind: str, text: str, artist: str | None = None) -> list[dict]:
+    """Last.fm's search, most listened first: [{"artist", "title" ("" for artists), "mbid", "listeners"}].
+    mbid is the MusicBrainz id when Last.fm knows it (artist id for artists, recording id for songs,
+    release id for albums); listeners is 0 where Last.fm doesn't say (albums).
     Empty when Last.fm can't be reached: then MusicBrainz's own order is used."""
     method, param, box, item = LASTFM_SEARCH[kind]
     extra = {"artist": artist} if artist and kind == "songs" else {}
@@ -166,29 +168,95 @@ def lastfm_search(kind: str, text: str, artist: str | None = None) -> list[tuple
         return []
     if isinstance(found, dict):
         found = [found]
+    def listeners(f):
+        try:
+            return int(f.get("listeners") or 0)
+        except (TypeError, ValueError):
+            return 0
     if kind == "artists":
-        return [(f.get("name") or "", "") for f in found]
-    return [(f.get("artist") or "", f.get("name") or "") for f in found]
+        return [{"artist": f.get("name") or "", "title": "", "mbid": f.get("mbid") or "", "listeners": listeners(f)} for f in found]
+    return [{"artist": f.get("artist") or "", "title": f.get("name") or "", "mbid": f.get("mbid") or "", "listeners": listeners(f)}
+            for f in found]
 
 
-def popular_first(kind: str, popular: list[tuple[str, str]], rows: list[dict]) -> list[dict]:
+def popular_first(kind: str, popular: list[dict], rows: list[dict]) -> list[dict]:
     """MusicBrainz scores every good text match about the same, so a well-known song can come after
-    an obscure one with the same title. Results Last.fm knows go first, in its order (most listened);
-    the rest keep MusicBrainz's order."""
+    an obscure one with the same title. Results Last.fm knows go first, in its order (most listened),
+    matched by MusicBrainz id where Last.fm gives one (songs), else by artist + title; the rest keep
+    MusicBrainz's order. Songs Last.fm counted get their "listeners" for the page to show."""
     found = popular
-    rank = {}
-    for i, (a, t) in enumerate(popular):
-        rank.setdefault(_key(a, t), i)
+    rank, by_id = {}, {}
+    for i, f in enumerate(popular):
+        rank.setdefault(_key(f["artist"], f["title"]), i)
+        if f["mbid"]:
+            by_id.setdefault(f["mbid"], i)
+    for r in rows:
+        i = by_id.get(r.get("id"))
+        if i is None:
+            i = next((rank[k] for k in (_key(n, r.get("title")) for n in (r.get("artist_names") or []) + [r.get("artist")]) if k in rank), None)
+        if i is not None and popular[i]["listeners"]:
+            r["listeners"] = popular[i]["listeners"]
 
     def place(pair):
         i, r = pair
         title = r.get("title") if kind != "artists" else ""
         names = (r.get("artist_names") or []) + [r.get("artist") or r.get("name")]
         hits = [rank[k] for k in (_key(n, title) for n in names) if k in rank]
+        if r.get("id") in by_id:
+            hits.append(by_id[r["id"]])
         # MusicBrainz's weak matches (score under 80) go last unless Last.fm named them
         # an album before a single of the same name; live albums and compilations after both
         kind_rank = (bool(r.get("secondary")), TYPE_RANK.get(r.get("type"), 3)) if kind == "albums" else (False, 0)
         return (not hits and (r.get("score") or 0) < 80, min(hits) if hits else len(found), kind_rank, i)
+
+    return [r for _, r in sorted(enumerate(rows), key=place)]
+
+
+def _library_artist_ids() -> set[str]:
+    """MusicBrainz ids of the artists in your library (read-only), so they rank first."""
+    import appdata
+    if not appdata.has_library():
+        return set()
+    try:
+        with appdata.open_db() as db:
+            return {appdata.as_text(a) for (a,) in db.execute("select distinct mb_artistid from items") if a}
+    except Exception:   # noqa: BLE001 - only a ranking hint; a busy or odd database mustn't break search
+        return set()
+
+
+def _bare(name: str) -> str:
+    """A name for "is this exactly what was typed": case, punctuation and a leading "the" don't count."""
+    k = _key(name)
+    return k[4:] if k.startswith("the ") else k
+
+
+def rank_artists(text: str, found: list[dict], rows: list[dict]) -> list[dict]:
+    """Artists in order: yours first, then exact name matches, then the rest; within each, most
+    listened first (Last.fm), then MusicBrainz's own order. Last.fm's numbers are matched by
+    MusicBrainz id where it gives one, so the famous Nirvana doesn't lend its listeners to every
+    band called Nirvana; a name Last.fm only knows without an id counts by name. An unknown band
+    whose exact name was typed still comes before famous partial matches."""
+    by_id = {f["mbid"]: f["listeners"] for f in found if f["mbid"]}
+    claimed = {_key(r.get("name")) for r in rows if r.get("id") in by_id}   # names whose real owner is known
+    by_name = {}
+    for f in found:
+        if not f["mbid"]:
+            by_name.setdefault(_key(f["artist"]), f["listeners"])
+    mine, typed = _library_artist_ids(), _bare(text)
+    for r in rows:
+        k = _key(r.get("name"))
+        r["listeners"] = by_id.get(r.get("id")) or (0 if k in claimed else by_name.get(k, 0))
+
+    words = set(typed.split())
+
+    def place(pair):
+        i, r = pair
+        name = _bare(r.get("name"))
+        # yours first only when the name has what was typed: MusicBrainz also matches nicknames
+        # ("queen" finds Ella Fitzgerald, "Queen of Jazz"), which shouldn't jump ahead of Queen
+        yours = r.get("id") in mine and words <= set(name.split())
+        weak = (r.get("score") or 0) < 80 and not r["listeners"]
+        return (not yours, name != typed, weak, -r["listeners"], i)
 
     return [r for _, r in sorted(enumerate(rows), key=place)]
 
