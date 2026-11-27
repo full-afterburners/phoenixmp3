@@ -89,6 +89,25 @@ svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none;
 .sbox input { width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); padding: 0 10px 0 30px; outline: none; }
 .sbox input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .nav { overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; margin: 0 -4px; padding: 0 4px; }
+/* Wide windows: the sidebar is a rail of icons that opens over the page while the mouse is on it
+   (or keyboard focus is in it), so the music gets the room. A short delay each way stops it
+   flickering when the mouse only passes by. Narrow windows keep the slide-in menu below. */
+@media (min-width: 761px) {
+  .app { --rail: 58px; --side-open: 236px; grid-template-columns: var(--rail) minmax(0, 1fr); }
+  .side { position: relative; z-index: 30; width: var(--rail); overflow: hidden; white-space: nowrap;
+    transition: width .18s ease .28s, box-shadow .18s ease .28s; }
+  .side:hover, .side:focus-within { width: var(--side-open); background: var(--side-solid); box-shadow: var(--shadow-pop); transition-delay: .1s; }
+  .side .sbox input { width: calc(var(--side-open) - 24px); }   /* clipped to its icon while closed */
+  .side .nav { overflow-x: hidden; }
+  .side .nav h4, .side .badge { transition: opacity .12s ease .28s; }
+  .side:not(:hover):not(:focus-within) .nav h4, .side:not(:hover):not(:focus-within) .badge { opacity: 0; }
+  /* closed: icons only (the words are there, just invisible, so nothing shifts when it opens) */
+  .side .nav a, .side .brand b, .side .sbox input::placeholder { transition: color .12s ease .28s; }
+  .side:not(:hover):not(:focus-within) .nav a, .side:not(:hover):not(:focus-within) .brand b,
+  .side:not(:hover):not(:focus-within) .sbox input::placeholder { color: transparent; }
+  .side .nav a { position: relative; }
+  .side:not(:hover):not(:focus-within) .nav a .dot { position: absolute; left: 24px; top: 4px; margin: 0; }   /* Activity's dot on its icon */
+}
 .nav h4 { margin: 0 0 3px; padding: 0 9px; font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.02em; }
 .nav a { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; }
 .nav a svg { color: var(--accent); }
