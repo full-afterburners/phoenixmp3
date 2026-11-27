@@ -29,7 +29,11 @@ This is the technical side. The README in the top folder covers normal use.
    `config.yaml` and `fillgenres.py`). Each song's Last.fm tags are kept in the
    library (`lastfm_*` fields), so `fillgenres.py <run-config> --refile
    [--since <unix time>]` can re-file genres with new settings without asking
-   Last.fm again. YouTube's category ("Music") is blanked when downloading. Songs Last.fm doesn't
+   Last.fm again. Genre settings saved in the new window go to `my-genres.txt`
+   and `my-genres.yaml` (personal, so updates don't overwrite them), which win
+   over `genres.txt` and `config.yaml`. `--preview` counts exactly which songs
+   new settings would move (kept tags only, changes nothing), and `--rules <folder>`
+   reads those two files from another folder. YouTube's category ("Music") is blanked when downloading. Songs Last.fm doesn't
    know get no genre and are tried again next run.
 9. With playlist files turned on, `writeplaylists.py` writes an .m3u8 for each
    saved playlist into `Playlists\` in the output folder.
@@ -60,6 +64,37 @@ The "pause between songs" setting spaces downloads out to avoid that, and if
 YouTube refuses 3 songs in a row the app stops downloading and tags what it got.
 Stop (or closing the window) ends a run, and anything that finished downloading
 gets tagged on the next run.
+
+## The new window (work in progress)
+
+`app.pyw` is the start of a new Apple Music-style window. `gui.pyw` stays the
+app until the new one can do everything. Run it with `.\python\pythonw.exe app.pyw`.
+
+- It's a web page, `ui/index.html`, shown in a native window by pywebview
+  (in `libs/`), which uses Microsoft Edge WebView2. WebView2 is built into
+  Windows 10/11.
+- `app.pyw` serves `ui/` on 127.0.0.1:47613. The port stays fixed because the
+  page's saved preferences belong to its address.
+- The page asks Python for data through `window.pywebview.api`.
+  `appdata.py` reads `library.db` read-only (sqlite `mode=ro`) and supplies:
+  - the library and album covers,
+  - the genre tree, with which songs fall under each genre,
+  - Last.fm's popular albums per genre, fetched when a genre is opened.
+- Cover thumbnails, Last.fm answers and the WebView2 profile are cached in `cache/`.
+- Genre changes are saved for real (`genrerules.py`). Saving shows the exact
+  number of songs that would move, and "Also re-file my library" runs
+  `fillgenres.py --refile` in the background, with its progress in the status
+  capsule.
+- Downloads and preferences don't work yet. The Classic Window button opens
+  `gui.pyw` for those, and `phoenixmp3.exe` opens this window (`--classic` for
+  the old one).
+
+The same page also runs outside the app as a design mockup. Without
+`?desktop` it loads `data.json`/`genres.json` snapshots and `demo.json`
+(sample search results, which the app uses too until real search is wired in).
+
+`node ui/tests/desktop_test.mjs` opens the real window with WebView2's
+DevTools port and checks it end to end.
 
 ## Files
 

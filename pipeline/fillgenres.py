@@ -30,12 +30,23 @@
 #    by hand are kept: genre_filed remembers the genre this script chose.
 #    --since <unix time> limits the run to songs added after that time (one
 #    download). --pretend changes nothing.
+#  - Your own choices made in the app live in my-genres.txt (the list) and
+#    my-genres.yaml (lastgenre source/family/moves). Both are personal, so a new
+#    release can't overwrite them, and when present they win over genres.txt and
+#    config.yaml. --rules <folder> reads them from another folder instead.
+#  - --preview tries the rules on every song that has kept tags, without
+#    asking Last.fm or changing anything. It prints a "move:" line (song id,
+#    genre now, genre then; tab-separated) for each song whose genre would
+#    change, then a "preview:" summary. The app uses it with --rules to count
+#    exactly what unsaved changes would do.
 #
-#   python fillgenres.py <run-config.yaml> [--pretend] [--refile] [--since <time>]
+#   python fillgenres.py [<run-config.yaml>] [--pretend] [--refile] [--since <time>]
+#                        [--rules <folder>] [--preview]
 import datetime
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pylast
@@ -46,8 +57,18 @@ HERE = Path(__file__).resolve().parent
 JOINERS = re.compile(r"\s*(?:,|&|\+|/|\bx\b|\bvs\.?|\bwith\b|\bf\./|\bfeat\.?|\bft\.?)\s*", re.IGNORECASE)
 
 
-def allowed():
-    lines = (HERE / "genres.txt").read_text(encoding="utf-8").splitlines()
+MY_LIST = "my-genres.txt"      # personal copies of the genre settings, see the top comment
+MY_RULES = "my-genres.yaml"
+
+
+def list_file(rules: Path = HERE) -> Path:
+    """The genre list in use: my-genres.txt in the rules folder if there is one, else genres.txt."""
+    mine = rules / MY_LIST
+    return mine if mine.exists() else HERE / "genres.txt"
+
+
+def allowed(rules: Path = HERE):
+    lines = list_file(rules).read_text(encoding="utf-8").splitlines()
     return {ln.strip().lower() for ln in lines if ln.strip() and not ln.startswith("#")}
 
 
@@ -139,12 +160,12 @@ def use_chains(chains: dict | None) -> None:
         lg_module.find_parents = lambda candidate, branches: list(chains.get(candidate.lower()) or [candidate])
 
 
-def make_plugin():
+def make_plugin(rules: Path = HERE):
     """beets' lastgenre plugin, set up so the genre tree decides first and the
     lastgenre.fallbacks patterns in config.yaml only cover tags it doesn't know.
     lastgenre.family and lastgenre.moves regroup the tree first."""
     lg = config["lastgenre"]
-    lg["whitelist"] = str(HERE / "genres.txt")
+    lg["whitelist"] = str(list_file(rules))
     lg["force"] = True
     lg["keep_existing"] = False
     lg["aliases"] = True  # beets' built-in spelling fixes, not a custom list
@@ -321,23 +342,35 @@ class GenreLookup:
         return [g for g in genres if g.lower() in ok][:1]
 
 
-def parse_args(argv: list[str]) -> tuple[str | None, bool, bool, float | None]:
-    pretend, refile, since, rest = False, False, None, []
+@dataclass(frozen=True)
+class Args:
+    run_config: str | None = None
+    pretend: bool = False
+    refile: bool = False
+    since: float | None = None
+    rules: Path = HERE
+    preview: bool = False
+
+
+def parse_args(argv: list[str]) -> Args:
+    opts, rest = {}, []
     it = iter(argv)
     for a in it:
-        if a == "--pretend":
-            pretend = True
-        elif a == "--refile":
-            refile = True
+        if a in ("--pretend", "--refile", "--preview"):
+            opts[a[2:]] = True
         elif a == "--since":
-            since = float(next(it))
+            opts["since"] = float(next(it))
+        elif a == "--rules":
+            opts["rules"] = Path(next(it))
         else:
             rest.append(a)
-    return (rest[0] if rest else None), pretend, refile, since
+    if opts.get("preview"):   # a preview is a re-file that changes nothing
+        opts.update(refile=True, pretend=True)
+    return Args(run_config=rest[0] if rest else None, **opts)
 
 
-def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str], ok: set, pretend: bool) -> None:
-    """Pick the song's genre from its tags, report it, and write it to the file."""
+def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str], ok: set, pretend: bool) -> list[str]:
+    """Pick the song's genre from its tags, report it, and write it to the file. Returns the genres picked."""
     name = f"{item.artist} - {item.title}"
     genres = lookup.genre(item, tags, ok)
     found = bool(genres)
@@ -350,12 +383,12 @@ def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str]
             note = f"none found, {current[0]} -> {genres[0]}"
         print(f"  genre: {name}: {note}", flush=True)
     if pretend:
-        return
+        return genres
     if genres == current:
         if found and item.get(FILED_FIELD) != genres[0]:
             item[FILED_FIELD] = genres[0]   # the same genre, now known to be ours
             item.store()
-        return
+        return genres
     item.genres = genres
     if genres:
         item[FILED_FIELD] = genres[0]
@@ -363,6 +396,7 @@ def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str]
         item.store()
     else:
         print(f"  genre: couldn't write tags, will try again next time - {name}", flush=True)
+    return genres
 
 
 def keep_tags(lookup: GenreLookup, items: list) -> None:
@@ -375,32 +409,47 @@ def keep_tags(lookup: GenreLookup, items: list) -> None:
 
 
 def main():
-    run_config, pretend, refile, since = parse_args(sys.argv[1:])
+    args = parse_args(sys.argv[1:])
     config.read()
-    if run_config:
-        config.set_file(run_config)
-    plugin = make_plugin()
+    if args.run_config:
+        config.set_file(args.run_config)
+    if (args.rules / MY_RULES).exists():
+        config.set_file(str(args.rules / MY_RULES))   # your own source/family/moves win
+    plugin = make_plugin(args.rules)
     lookup = GenreLookup(plugin)
-    ok = allowed()
+    ok = allowed(args.rules)
 
     lib = Library(config["library"].as_filename(), config["directory"].as_filename())
-    backfill = []
+    backfill, changes, checked, untagged = [], 0, 0, 0
     for item in lib.items():
-        if since is not None and item.added < since:
+        if args.since is not None and item.added < args.since:
             continue
         current = list(item.get("genres", with_album=False) or [])
         listed = bool(current) and current[0].lower() in ok
-        if listed and not refile:
+        if listed and not args.refile:
             if stored_tags(item) is None:
                 backfill.append(item)   # done after the new songs, so they're tagged first
             continue
         if listed and hand_set(item, current):
             print(f"  genre: {item.artist} - {item.title}: kept hand-set {', '.join(current)}", flush=True)
             continue
-        tags = lookup.tags_for(item, pretend)
+        if args.preview:   # kept tags only: no Last.fm, so it's quick and works offline
+            tags = stored_tags(item)
+            if tags is None:
+                untagged += 1
+                continue
+            checked += 1
+            picked = file_genre(plugin, lookup, item, tags, current, ok, pretend=True)
+            if picked[:1] != current[:1]:
+                changes += 1
+                print(f"  move: {item.id}\t{current[0] if current else ''}\t{picked[0] if picked else ''}", flush=True)
+            continue
+        tags = lookup.tags_for(item, args.pretend)
         if tags is not None:
-            file_genre(plugin, lookup, item, tags, current, ok, pretend)
-    if backfill and not pretend:
+            file_genre(plugin, lookup, item, tags, current, ok, args.pretend)
+    if args.preview:
+        print(f"preview: {changes} would change, {checked} checked, {untagged} without kept tags", flush=True)
+    if backfill and not args.pretend:
         keep_tags(lookup, backfill)
 
 

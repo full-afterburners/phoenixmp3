@@ -54,7 +54,8 @@ foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
 
 # Check nothing personal made it in.
 $personal = "library.db", "downloaded.txt", "unavailable.txt", "replaced.txt", "settings.json", "run-config.yaml",
-            "playlists.txt", "playlists-run.json", "findcopy-run.json", "shortcut.txt", "last-run.log", "import.log"
+            "playlists.txt", "playlists-run.json", "findcopy-run.json", "shortcut.txt", "last-run.log", "import.log",
+            "my-genres.txt", "my-genres.yaml", "app.log"
 $found = Get-ChildItem -Recurse -File $Stage | Where-Object { $personal -contains $_.Name -or $_.Extension -eq ".lnk" }
 if ($found) { throw "Personal files in the build: $($found.FullName -join ', ')" }
 $who  = [regex]::Escape($env:USERNAME)

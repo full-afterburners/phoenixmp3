@@ -1,0 +1,1512 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>phoenixmp3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: a one-screen desktop app. Frosted sidebar (search, library, playlists) | main pane with a
+   status "LCD" capsule on top (what phoenixmp3 is doing right now) and the current view below. */
+:root {
+  --bg: #ffffff;
+  --pane: #ffffff;
+  --side: rgba(244, 243, 246, 0.86);
+  --side-solid: #f4f3f6;
+  --raised: #ffffff;
+  --sunk: #f2f1f4;
+  --hover: rgba(0, 0, 0, 0.045);
+  --sel: rgba(0, 0, 0, 0.075);
+  --ink: #1d1d1f;
+  --ink-2: #6e6e73;
+  --ink-3: #a1a1a6;
+  --line: #e6e5ea;
+  --accent: #f0304a;
+  --accent-ink: #ffffff;
+  --accent-soft: #fde8eb;
+  --ok: #1f9d55;
+  --ok-soft: #e3f5ea;
+  --warn: #c27c0e;
+  --warn-soft: #fbf0dc;
+  --bad: #d23a2e;
+  --bad-soft: #fbe5e3;
+  --flame: linear-gradient(100deg, #ff2d55 0%, #ff5a36 45%, #ffa52e 100%);
+  --shadow-art: 0 1px 2px rgba(0,0,0,.08), 0 6px 18px rgba(0,0,0,.10);
+  --shadow-pop: 0 10px 40px rgba(0,0,0,.16), 0 2px 6px rgba(0,0,0,.08);
+  --font: "Inter", -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --r-art: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1e1e20; --pane: #1e1e20; --side: rgba(40, 39, 43, 0.86); --side-solid: #28272b; --raised: #2a292d;
+    --sunk: #2a292d; --hover: rgba(255,255,255,.06); --sel: rgba(255,255,255,.10);
+    --ink: #f5f5f7; --ink-2: #a1a1a6; --ink-3: #6e6e73; --line: #38373c;
+    --accent: #ff4d63; --accent-ink: #ffffff; --accent-soft: #4a1f27;
+    --ok: #45c47a; --ok-soft: #173a26; --warn: #e9a63c; --warn-soft: #3d2e14; --bad: #ff6b5e; --bad-soft: #3f1d1a;
+    --shadow-art: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.45); --shadow-pop: 0 12px 44px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1e20; --pane: #1e1e20; --side: rgba(40, 39, 43, 0.86); --side-solid: #28272b; --raised: #2a292d;
+  --sunk: #2a292d; --hover: rgba(255,255,255,.06); --sel: rgba(255,255,255,.10);
+  --ink: #f5f5f7; --ink-2: #a1a1a6; --ink-3: #6e6e73; --line: #38373c;
+  --accent: #ff4d63; --accent-ink: #ffffff; --accent-soft: #4a1f27;
+  --ok: #45c47a; --ok-soft: #173a26; --warn: #e9a63c; --warn-soft: #3d2e14; --bad: #ff6b5e; --bad-soft: #3f1d1a;
+  --shadow-art: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.45); --shadow-pop: 0 12px 44px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); -webkit-font-smoothing: antialiased; overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.015em; }
+p { margin: 0; }
+svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- shell ---------- */
+.app { height: 100%; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+.side { background: var(--side); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px);
+  border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;
+  padding: 14px 10px max(12px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); }
+.brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 14px; }
+.logo { width: 26px; height: 26px; border-radius: 7px; background: var(--flame); display: grid; place-items: center; box-shadow: 0 2px 8px rgba(255, 70, 50, .35); }
+.logo svg { width: 16px; height: 16px; stroke: #fff; fill: none; stroke-width: 2; }
+.brand b { font-weight: 700; font-size: 15px; letter-spacing: -0.02em; }
+.sbox { position: relative; margin: 0 2px 12px; }
+.sbox svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--ink-3); }
+.sbox input { width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); padding: 0 10px 0 30px; outline: none; }
+.sbox input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.nav { overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; margin: 0 -4px; padding: 0 4px; }
+.nav h4 { margin: 0 0 3px; padding: 0 9px; font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.02em; }
+.nav a { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; }
+.nav a svg { color: var(--accent); }
+.nav a:hover { background: var(--hover); }
+.nav a[aria-current="page"] { background: var(--sel); }
+.nav a .badge { margin-left: auto; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.nav a .dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.side-foot { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); }
+.top { height: 56px; flex: none; display: grid; grid-template-columns: 1fr minmax(0, 460px) 1fr; align-items: center; gap: 12px;
+  padding: 0 max(18px, env(safe-area-inset-right, 0px)) 0 18px; border-bottom: 1px solid var(--line); }
+.menu-btn { display: none; border: 0; background: none; padding: 6px; border-radius: 8px; }
+.lcd { grid-column: 2; height: 38px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); display: flex; align-items: center; gap: 10px;
+  padding: 0 12px; cursor: pointer; overflow: hidden; position: relative; min-width: 0; text-align: left; }
+.lcd:hover { border-color: var(--ink-3); }
+.lcd .logo { width: 22px; height: 22px; border-radius: 6px; box-shadow: none; }
+.lcd .logo svg { width: 13px; height: 13px; }
+.lcd .txt { min-width: 0; flex: 1; display: flex; flex-direction: column; line-height: 1.2; }
+.lcd .txt b { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcd .txt span { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcd .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--flame); width: 0; transition: width .4s ease; }
+.top-right { justify-self: end; display: flex; gap: 6px; }
+.view { flex: 1; overflow-y: auto; min-height: 0; padding: 26px max(28px, env(safe-area-inset-right, 0px)) 48px 28px; }
+
+/* ---------- common pieces ---------- */
+.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.head h1 { font-size: 30px; font-weight: 800; }
+.head .sub { color: var(--ink-2); margin-top: 2px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { height: 30px; padding: 0 13px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn svg { width: 15px; height: 15px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--accent); }
+.btn.ghost:hover { background: var(--accent-soft); }
+.btn[disabled] { opacity: .45; cursor: default; filter: none; }
+.seg { display: inline-flex; background: var(--sunk); border-radius: 8px; padding: 2px; border: 1px solid var(--line); }
+.seg button { border: 0; background: none; height: 24px; padding: 0 11px; border-radius: 6px; font-weight: 500; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.chip svg { width: 12px; height: 12px; stroke-width: 2.4; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.acc { background: var(--accent-soft); color: var(--accent); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.mute { background: var(--sunk); color: var(--ink-2); }
+.select { height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); padding: 0 8px; }
+.empty { color: var(--ink-2); padding: 40px 0; text-align: center; }
+.note { font-size: 12px; color: var(--ink-2); }
+.section-title { font-size: 19px; font-weight: 700; margin: 28px 0 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.section-title a { font-size: 13px; font-weight: 500; color: var(--accent); text-decoration: none; }
+
+/* album grid */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 22px 18px; }
+.tile { display: flex; flex-direction: column; gap: 7px; text-decoration: none; color: inherit; min-width: 0; }
+.art { aspect-ratio: 1; width: 100%; max-width: 100%; border-radius: var(--r-art); background: var(--sunk); box-shadow: var(--shadow-art); object-fit: cover; display: block; }
+.tile:hover .art { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
+.tile .art { transition: transform .18s ease, box-shadow .18s ease; }
+.tile .t1 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }
+.tile .t2 { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; margin-top: -4px; }
+.art-ph { display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 28px; letter-spacing: -0.03em; }
+
+/* banner (last download) */
+.banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 16px 18px; border-radius: 14px;
+  background: var(--sunk); border: 1px solid var(--line); margin-bottom: 26px; }
+.stack { display: flex; }
+.stack img { width: 46px; height: 46px; border-radius: 6px; box-shadow: var(--shadow-art); margin-left: -16px; border: 2px solid var(--sunk); object-fit: cover; }
+.stack img:first-child { margin-left: 0; }
+.banner b { font-size: 15px; }
+
+/* album page */
+.album-hero { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: end; margin-bottom: 26px; }
+.album-hero .art { box-shadow: var(--shadow-pop); }
+.album-hero h1 { font-size: 30px; font-weight: 800; }
+.album-hero .by { font-size: 20px; font-weight: 600; color: var(--accent); text-decoration: none; display: inline-block; margin: 2px 0 6px; }
+.album-hero .meta { color: var(--ink-2); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.album-hero .row { margin-top: 16px; }
+.callout { display: flex; gap: 12px; align-items: center; padding: 11px 14px; border-radius: 10px; background: var(--accent-soft); margin-top: 16px; flex-wrap: wrap; }
+.callout b { color: var(--accent); }
+
+/* track / song tables */
+.tbl { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tbl th { text-align: left; font-weight: 600; font-size: 11.5px; color: var(--ink-2); padding: 6px 10px; border-bottom: 1px solid var(--line); position: sticky; top: -26px; background: var(--pane); z-index: 1; white-space: nowrap; user-select: none; }
+.tbl th.sortable { cursor: pointer; }
+.tbl th.sortable:hover { color: var(--ink); }
+.tbl td { padding: 0 10px; height: 38px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
+.tbl tr.r:hover td { background: var(--hover); }
+.tbl .num { color: var(--ink-3); width: 38px; text-align: right; }
+.tbl .dim { color: var(--ink-2); }
+.tbl .time { width: 64px; text-align: right; color: var(--ink-2); }
+.tbl .ttl { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tbl .ttl img { width: 30px; height: 30px; border-radius: 4px; flex: none; object-fit: cover; }
+.tbl .ttl span { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.tbl a { color: inherit; text-decoration: none; }
+.tbl a:hover { text-decoration: underline; }
+.tbl-wrap { overflow-x: auto; margin: 0 -10px; }
+.tbl-wrap .tbl { min-width: 720px; }
+
+/* artists */
+.avatars { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 22px 16px; }
+.avatar { display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; color: inherit; text-align: center; min-width: 0; }
+.avatar img, .avatar .art-ph { width: 100%; max-width: 132px; aspect-ratio: 1; border-radius: 50%; object-fit: cover; box-shadow: var(--shadow-art); }
+.avatar span { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar small { color: var(--ink-2); margin-top: -6px; }
+
+/* genres */
+.genre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+.gcard { border-radius: 14px; overflow: hidden; text-decoration: none; color: #fff; position: relative; aspect-ratio: 16 / 10; box-shadow: var(--shadow-art); display: block; max-width: 100%; }
+.gcard .mosaic { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.gcard .mosaic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gcard .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.05) 30%, rgba(0,0,0,.72)); }
+.gcard .lbl { position: absolute; left: 14px; bottom: 11px; right: 14px; }
+.gcard .lbl b { font-size: 19px; font-weight: 800; display: block; letter-spacing: -0.02em; }
+.gcard .lbl small { opacity: .85; }
+.gcard:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
+.gcard { transition: transform .18s ease, box-shadow .18s ease; }
+.rules { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--sunk); margin-bottom: 22px; }
+.rules .row { gap: 6px; margin-top: 8px; }
+
+/* get music */
+.hero-search { max-width: 760px; margin: 6px auto 0; display: flex; flex-direction: column; gap: 12px; }
+.big-input { position: relative; }
+.big-input svg { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--ink-3); }
+.big-input input { width: 100%; height: 52px; border-radius: 14px; border: 1px solid var(--line); background: var(--raised); padding: 0 16px 0 46px; font-size: 16px; outline: none; box-shadow: var(--shadow-art); }
+.big-input input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow-art); }
+.tries { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.tries button { border: 1px solid var(--line); background: var(--raised); border-radius: 99px; height: 26px; padding: 0 11px; color: var(--ink-2); }
+.tries button:hover { color: var(--ink); border-color: var(--ink-3); }
+.results { max-width: 760px; margin: 22px auto 0; display: flex; flex-direction: column; gap: 2px; }
+.res { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 8px 10px; border-radius: 10px; border: 0; background: none; text-align: left; width: 100%; }
+.res:hover { background: var(--hover); }
+.res .art, .res .art-ph { width: 52px; height: 52px; border-radius: 6px; font-size: 16px; }
+.res b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res small { color: var(--ink-2); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linkcard { max-width: 760px; margin: 22px auto 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 16px; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--sunk); align-items: center; }
+.linkcard .yt { width: 64px; height: 64px; border-radius: 12px; background: var(--flame); display: grid; place-items: center; color: #fff; }
+.linkcard .yt svg { width: 28px; height: 28px; }
+.release { max-width: 900px; margin: 22px auto 0; }
+.release .album-hero { grid-template-columns: 180px minmax(0, 1fr); }
+.editions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.ed { border: 1px solid var(--line); background: var(--raised); border-radius: 10px; padding: 7px 12px; text-align: left; line-height: 1.25; }
+.ed small { color: var(--ink-2); display: block; font-size: 11.5px; }
+.ed[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chk { width: 16px; height: 16px; accent-color: var(--accent); }
+.sticky-foot { position: sticky; bottom: -48px; margin: 18px -10px -48px; padding: 12px 10px 18px; background: linear-gradient(180deg, transparent, var(--pane) 30%); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* browse by genre */
+.mode-switch { display: flex; justify-content: center; }
+.browse { max-width: 1100px; margin: 18px auto 0; display: flex; flex-direction: column; gap: 16px; }
+.crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-weight: 600; }
+.crumbs button { border: 0; background: none; padding: 3px 6px; border-radius: 6px; color: var(--ink-2); font-weight: 600; }
+.crumbs button:hover { background: var(--hover); color: var(--ink); }
+.crumbs button[aria-current="true"] { color: var(--ink); }
+.crumbs .sep { color: var(--ink-3); }
+.columns { display: flex; border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; background: var(--raised); height: 280px; scroll-behavior: smooth; }
+.col { flex: none; width: 220px; border-right: 1px solid var(--line); overflow-y: auto; padding: 6px; }
+.col:last-child { border-right: 0; }
+.col h5 { margin: 4px 8px 6px; font-size: 11px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+.gnode { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto 12px; gap: 8px; align-items: center; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 7px; }
+.gnode:hover { background: var(--hover); }
+.gnode[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.gnode[aria-pressed="true"] .cnt, .gnode[aria-pressed="true"] .chev { color: var(--accent-ink); opacity: .85; }
+.gnode .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.gnode .cnt { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.gnode .chev { color: var(--ink-3); font-size: 14px; line-height: 1; }
+.gnode.mine .nm::after { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-left: 6px; vertical-align: 1px; }
+.gnode[aria-pressed="true"].mine .nm::after { background: var(--accent-ink); }
+.gdetail-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.gdetail-head h2 { font-size: 26px; font-weight: 800; }
+.pop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 20px 16px; }
+.pop { position: relative; display: flex; flex-direction: column; gap: 6px; border: 0; background: none; text-align: left; padding: 0; min-width: 0; }
+.pop .art { transition: transform .18s ease, box-shadow .18s ease; }
+.pop:hover .art { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
+.pop .t1 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }
+.pop .t2 { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; margin-top: -3px; }
+.pop .badge { position: absolute; top: 8px; left: 8px; }
+.pop .get { position: absolute; right: 8px; top: calc(100% - 80px); width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; box-shadow: var(--shadow-art); }
+.pop:hover .get, .pop:focus-visible .get { opacity: 1; transform: none; }
+.pop .get svg { width: 16px; height: 16px; stroke-width: 2.4; }
+.sheet-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 45; display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.sheet { background: var(--pane); border-radius: 16px; box-shadow: var(--shadow-pop); width: min(520px, 100%); padding: 20px; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; align-items: center; }
+.sheet h3 { font-size: 20px; font-weight: 800; }
+.sheet .by { color: var(--accent); font-weight: 600; }
+.sheet .row { margin-top: 12px; }
+.gnode.on .nm { font-weight: 700; }
+.legend .lg-on { font-weight: 700; color: var(--ink); }
+.legend .lg-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); vertical-align: 1px; margin-right: 2px; }
+.columns.editing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.gnode.edit { grid-template-columns: auto minmax(0, 1fr) auto 12px; cursor: grab; padding: 4px 8px; }
+.gnode.edit .nm { border: 0; background: none; padding: 2px 0; text-align: left; min-width: 0; }
+.gnode.edit[aria-pressed="true"] { background: var(--sel); color: var(--ink); }
+.gnode.edit[aria-pressed="true"] .cnt, .gnode.edit[aria-pressed="true"] .chev { color: var(--ink-3); }
+.gnode.edit.moved .nm { color: var(--accent); }
+.gnode.dragging { opacity: .4; }
+.gnode.drop-here { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); }
+.col.drop-col { background: var(--accent-soft); }
+.tog { width: 28px; height: 16px; border-radius: 99px; border: 0; background: var(--line); position: relative; padding: 0; flex: none; }
+.tog::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+.tog[aria-checked="true"] { background: var(--ok); }
+.tog[aria-checked="true"]::after { transform: translateX(12px); }
+.ptoggle { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; margin-top: 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); cursor: pointer; }
+.ptoggle b { display: block; font-weight: 600; }
+.ptoggle small { color: var(--ink-2); }
+.gpanel .row.note { margin-top: 8px; gap: 8px; }
+.editbar { position: sticky; bottom: -48px; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; border-radius: 12px; background: var(--raised); border: 1px solid var(--accent); box-shadow: var(--shadow-pop); }
+.sheet.wide { grid-template-columns: minmax(0, 1fr); width: min(560px, 100%); }
+.choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.choice { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.choice input { accent-color: var(--accent); margin-top: 3px; }
+.choice b { display: block; font-weight: 600; }
+.choice small { color: var(--ink-2); }
+.browse.in-lib { max-width: none; margin-top: 0; }
+.btn.small { height: 26px; padding: 0 9px; font-size: 12px; }
+
+/* org chart */
+.ochart-wrap { display: flex; flex-direction: column; gap: 8px; }
+.ozoom { justify-content: flex-end; gap: 4px; }
+.ozoom output { min-width: 3.2em; text-align: center; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.ochart { overflow: auto; max-height: 64vh; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); padding: 16px; cursor: grab; }
+.ochart.panning { cursor: grabbing; user-select: none; }
+.ochart.editing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ochart > .org { width: max-content; margin-inline: auto; zoom: var(--zoom, 1); }
+.org, .org ul { list-style: none; margin: 0; padding: 0; display: flex; justify-content: center; }
+.org ul { padding-top: 16px; position: relative; }
+.org li { position: relative; padding: 16px 4px 0; display: flex; flex-direction: column; align-items: center; }
+.org > li { padding-top: 0; }
+.org li::before, .org li::after { content: ""; position: absolute; top: 0; height: 16px; border-top: 1.5px solid var(--line); width: 50%; }
+.org li::before { right: 50%; }
+.org li::after { left: 50%; border-left: 1.5px solid var(--line); }
+.org li:only-child::before, .org li:only-child::after { display: none; }
+.org li:only-child { padding-top: 16px; }
+.org li:only-child > .ocard::before, .org li:only-child > .odrawer::before { content: ""; position: absolute; top: -16px; left: 50%; height: 16px; border-left: 1.5px solid var(--line); }
+.org li:first-child::before, .org li:last-child::after { border-top: 0; }
+.org li:last-child::before { border-right: 1.5px solid var(--line); border-radius: 0 6px 0 0; }
+.org li:first-child::after { border-radius: 6px 0 0 0; }
+.org ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 16px; border-left: 1.5px solid var(--line); }
+.org > li::before, .org > li::after { display: none; }
+.ocard { position: relative; width: 112px; border-radius: 9px; border: 1.5px dashed var(--line); background: var(--sunk); color: var(--ink-2);
+  padding: 6px 8px 7px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.ocard:hover { border-color: var(--ink-3); color: var(--ink); }
+.ocard .nm { font-weight: 700; font-size: 12.5px; line-height: 1.15; overflow-wrap: anywhere; letter-spacing: -0.01em; }
+.ocard .ct { font-size: 11px; font-variant-numeric: tabular-nums; }
+.ocard .obar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.ocard .obar i { display: block; height: 100%; background: var(--ink-3); }
+.ocard .mv { font-size: 10.5px; font-weight: 600; color: var(--accent); }
+.ocard.on { border: 1.5px solid var(--ok); background: var(--ok-soft); color: var(--ink); }
+.ocard.on .ct { color: var(--ink-2); }
+.ocard.on .obar i { background: var(--ok); }
+.ocard.sel { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+.ocard.disc { border-style: solid; background: var(--raised); color: var(--ink); }
+.ocard.disc .ct { color: var(--ink-2); }
+.ocard.root { width: 140px; text-align: center; align-items: center; background: var(--ink); color: var(--bg); border: 1.5px solid var(--ink); cursor: default; }
+.ocard.root .ct { color: var(--bg); opacity: .75; }
+.ocard.more { width: auto; min-width: 84px; border-style: dotted; align-items: center; text-align: center; }
+.ocard.drop-here { outline: 3px solid var(--accent); outline-offset: 2px; }
+.odrawer { position: relative; border: 1.5px dotted var(--ink-3); border-radius: 9px; background: var(--pane); padding: 0 6px 6px; }
+.odrawer-top { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 11px; color: var(--ink-2); }
+.odrawer-grid { display: grid; grid-template-columns: repeat(3, 112px); gap: 6px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+/* chart + music panel side by side */
+.gsplit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 16px; align-items: start; }
+.gleft { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.gsplit .ochart { height: calc(100vh - 56px - 190px); max-height: none; min-height: 360px; }
+.gpanel { position: sticky; top: 0; max-height: calc(100vh - 56px - 60px); overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--raised); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.gpanel h3 { font-size: 22px; font-weight: 800; }
+.gpanel .ptitle { margin: 6px 0 0; font-size: 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.gpanel .pop-grid, .gpanel .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; }
+.gpanel .tile .t1, .gpanel .pop .t1 { font-size: 12px; }
+.gpanel .tile .t2, .gpanel .pop .t2 { font-size: 11.5px; }
+.gpanel .pop .badge { top: 4px; left: 4px; height: 18px; padding: 0 6px; font-size: 10.5px; }
+.gpanel .pop .get { width: 28px; height: 28px; right: 5px; top: auto; bottom: 46px; }
+.glist { display: flex; flex-direction: column; }
+.gitem { display: flex; justify-content: space-between; border: 0; background: none; padding: 7px 8px; border-radius: 7px; text-align: left; font-weight: 500; }
+.gitem:hover { background: var(--hover); }
+.ozoom .legend { margin-right: auto; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-select: none; }
+@media (max-width: 1100px) {
+  .gsplit { grid-template-columns: minmax(0, 1fr); }
+  .gsplit .ochart { height: 56vh; }
+  .gpanel { position: static; max-height: none; }
+}
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; background: var(--ink); color: var(--bg); font-weight: 600; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; box-shadow: var(--shadow-pop); }
+@media (max-width: 760px) { .sheet { grid-template-columns: minmax(0, 1fr); } .sheet .art { max-width: 160px; } .col { width: 180px; } }
+
+/* activity */
+.steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 22px; }
+.step { border-radius: 12px; border: 1px solid var(--line); padding: 11px 12px; background: var(--raised); min-width: 0; }
+.step b { display: block; font-weight: 600; font-size: 12.5px; }
+.step small { color: var(--ink-2); font-size: 11.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .pb { height: 4px; border-radius: 2px; background: var(--sunk); margin-top: 8px; overflow: hidden; }
+.step .pb i { display: block; height: 100%; width: 0; background: var(--flame); transition: width .4s ease; }
+.step.done .pb i { width: 100%; background: var(--ok); }
+.step.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.runlist { display: flex; flex-direction: column; }
+.runrow { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.runrow img, .runrow .art-ph { width: 40px; height: 40px; border-radius: 5px; font-size: 13px; }
+.runrow b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runrow small { color: var(--ink-2); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 16px 18px; border-radius: 14px; background: var(--ok-soft); margin-bottom: 20px; }
+.summary b { color: var(--ok); font-size: 15px; }
+.log { margin-top: 14px; background: var(--sunk); border-radius: 10px; padding: 12px 14px; font: 11.5px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--ink-2); max-height: 260px; overflow: auto; white-space: pre; }
+
+/* playlists */
+.plist { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.pcard { border-radius: 14px; border: 1px solid var(--line); padding: 14px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: center; background: var(--raised); }
+.pcard .pmos { width: 64px; height: 64px; border-radius: 10px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; box-shadow: var(--shadow-art); }
+.pcard .pmos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pcard b { font-size: 14px; display: block; }
+.pcard .row { margin-top: 6px; }
+
+/* preferences */
+.prefs { max-width: 720px; display: flex; flex-direction: column; gap: 22px; }
+.group h3 { font-size: 13px; color: var(--ink-2); font-weight: 600; margin: 0 0 7px 4px; }
+.card { border-radius: 12px; border: 1px solid var(--line); background: var(--raised); overflow: hidden; }
+.pref { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.pref:last-child { border-bottom: 0; }
+.pref b { font-weight: 600; display: block; }
+.pref small { color: var(--ink-2); display: block; }
+.pref code { font: 11.5px ui-monospace, "Cascadia Mono", Consolas, monospace; background: var(--sunk); padding: 1px 5px; border-radius: 4px; }
+.switch { position: relative; width: 38px; height: 22px; flex: none; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--line); transition: background .15s; pointer-events: none; }
+.switch span::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s; }
+.switch input:checked + span { background: var(--ok); }
+.switch input:checked + span::after { transform: translateX(16px); }
+.switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.range { display: flex; align-items: center; gap: 10px; }
+.range input { accent-color: var(--accent); width: 150px; }
+
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 500; box-shadow: var(--shadow-pop); z-index: 50; max-width: min(90vw, 520px); }
+.mock-tag { font-size: 11px; color: var(--ink-3); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---------- narrow windows / phones ---------- */
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: fixed; z-index: 40; inset: 0 auto 0 0; width: 270px; transform: translateX(-102%); transition: transform .22s ease; background: var(--side-solid);
+    padding-top: max(14px, env(safe-area-inset-top, 0px)); box-shadow: var(--shadow-pop); }
+  .app.open .side { transform: none; }
+  .menu-btn { display: inline-flex; }
+  .top { grid-template-columns: auto minmax(0, 1fr) auto; padding-left: max(10px, env(safe-area-inset-left, 0px)); }
+  .lcd { grid-column: 2; }
+  .view { padding: 18px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 18px 12px; }
+  .album-hero, .release .album-hero { grid-template-columns: minmax(0, 1fr); }
+  .album-hero .art { max-width: 220px; }
+  .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .banner { grid-template-columns: minmax(0, 1fr); }
+  .head h1 { font-size: 26px; }
+  .tbl th { top: -18px; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3.5 5 5.4 5 10a5 5 0 0 1-10 0c0-2 1-3.4 2-4.3.2 1.6 1 2.6 2 3 0-3 .3-5.8 1-8.7z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-get" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5v3"/></symbol>
+  <symbol id="i-album" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9z"/><circle cx="8.5" cy="8.5" r="1.4"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h8M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8m0-4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16m0 4v-4h-4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-q" viewBox="0 0 24 24"><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="4" rx="1"/><rect x="3" y="16.5" width="6" height="4" rx="1"/><rect x="15" y="16.5" width="6" height="4" rx="1"/><path d="M12 7.5v4M6 16.5v-2.5h12v2.5"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <aside class="side" aria-label="Sidebar">
+    <div class="brand"><span class="logo"><svg><use href="#i-flame"/></svg></span><b>phoenixmp3</b></div>
+    <form class="sbox" id="sideSearch" role="search">
+      <svg class="i"><use href="#i-search"/></svg>
+      <input id="sideQ" type="search" placeholder="Search or paste a link" aria-label="Search your library, find music, or paste a YouTube link" autocomplete="off">
+    </form>
+    <nav class="nav" id="nav">
+      <div>
+        <a href="#get"><svg class="i"><use href="#i-get"/></svg>Get Music</a>
+        <a href="#activity"><svg class="i"><use href="#i-pulse"/></svg>Activity<span class="dot" id="actDot" hidden></span></a>
+      </div>
+      <div>
+        <h4>Library</h4>
+        <a href="#recent"><svg class="i"><use href="#i-clock"/></svg>Recently Added</a>
+        <a href="#artists"><svg class="i"><use href="#i-mic"/></svg>Artists<span class="badge" id="nArtists"></span></a>
+        <a href="#albums"><svg class="i"><use href="#i-album"/></svg>Albums<span class="badge" id="nAlbums"></span></a>
+        <a href="#songs"><svg class="i"><use href="#i-note"/></svg>Songs<span class="badge" id="nSongs"></span></a>
+        <a href="#genres"><svg class="i"><use href="#i-tag"/></svg>Genres</a>
+      </div>
+      <div>
+        <h4>My Playlists</h4>
+        <div id="navPlaylists"></div>
+      </div>
+    </nav>
+    <div class="side-foot">
+      <div class="nav"><a href="#prefs"><svg class="i"><use href="#i-gear"/></svg>Preferences</a></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="Show sidebar"><svg class="i"><use href="#i-menu"/></svg></button>
+      <button class="lcd" id="lcd" type="button" aria-label="Open activity">
+        <span class="logo"><svg><use href="#i-flame"/></svg></span>
+        <span class="txt"><b id="lcdTitle">Ready</b><span id="lcdSub">Loading your library…</span></span>
+        <span class="bar" id="lcdBar"></span>
+      </button>
+      <div class="top-right"><span class="mock-tag">Mockup</span></div>
+    </div>
+    <div class="view" id="view" tabindex="-1"></div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+  // In the desktop app (app.pyw opens this page with ?desktop) the library, genre tree and
+  // Last.fm albums come from Python through window.pywebview.api. Anywhere else (the claude.ai
+  // mockup) they come from JSON snapshots next to the page. demo.json (sample search results)
+  // is used in both until the real search is wired in.
+  const IN_APP = new URLSearchParams(location.search).has("desktop");
+  const apiReady = IN_APP ? new Promise(res => {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.load) res();
+    else window.addEventListener("pywebviewready", res, { once: true });
+  }) : null;
+  const fetchJSON = url => fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  const load = name => IN_APP ? apiReady.then(() => window.pywebview.api.load(name)) : fetchJSON(name + ".json");
+  const errText = e => (e && (e.message || e.toString())) || "unknown error";
+  let DEMO = null;
+  // The new window can't download yet, so it offers the classic one (gui.pyw) in its place.
+  if (IN_APP) document.querySelector(".mock-tag")?.replaceWith(h("button", { class: "btn small", type: "button", id: "classicBtn",
+    title: "The classic phoenixmp3 window, for downloading until this one can",
+    onclick: () => apiReady.then(() => window.pywebview.api.open_classic()).then(() => toast("Opening the classic window…"), e => toast(`Couldn't open it (${errText(e)})`)) },
+    "Classic Window"));
+  let theme = "dark";
+  try { theme = localStorage.getItem("phx-theme") || "dark"; } catch (e) {}
+  const applyTheme = t => { if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; };
+  applyTheme(theme);
+  const $ = id => document.getElementById(id);
+  const view = $("view");
+  let L = null;   // library data
+
+  // ---------- tiny helpers ----------
+  function h(tag, attrs, ...kids) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") e.className = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else if (k === "html") e.innerHTML = v;
+      else e.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat(9)) if (kid != null && kid !== false) e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    return e;
+  }
+  const icon = (name, cls = "i") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("class", cls); const u = document.createElementNS("http://www.w3.org/2000/svg", "use"); u.setAttribute("href", "#i-" + name); s.append(u); return s; };
+  const mins = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  const norm = s => (s || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const plural = (n, w, ws) => `${n} ${n === 1 ? w : (ws || w + "s")}`;
+  const slug = s => encodeURIComponent(norm(s).replace(/ /g, "-") || "none");
+  const fmtDate = t => new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const HUES = [350, 18, 38, 160, 200, 230, 265, 300];
+  function placeholder(text, cls = "art art-ph") {
+    const n = [...(text || "?")].reduce((a, c) => a + c.charCodeAt(0), 0);
+    const hue = HUES[n % HUES.length];
+    return h("div", { class: cls, style: `background: linear-gradient(135deg, hsl(${hue} 70% 58%), hsl(${(hue + 40) % 360} 75% 45%))`, "aria-hidden": "true" },
+      (text || "?").replace(/^the /i, "").slice(0, 1).toUpperCase());
+  }
+  const cover = (al, cls = "art") => al && al.cover ? h("img", { class: cls, src: al.cover, alt: "", loading: "lazy" }) : placeholder(al ? al.name : "?", cls + " art-ph");
+  let toastTimer;
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2600); }
+
+  // ---------- derived library ----------
+  let artists = [], genreMap = new Map();
+  function derive() {
+    const byArtist = new Map();
+    L.albums.forEach(al => {
+      const key = norm(al.artist);
+      if (!byArtist.has(key)) byArtist.set(key, { name: al.artist, albums: [], songs: 0 });
+      const a = byArtist.get(key); a.albums.push(al); a.songs += al.songs.length;
+    });
+    artists = [...byArtist.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    artists.forEach((a, i) => { a.id = i; a.albums.sort((x, y) => (y.year || 0) - (x.year || 0)); });
+    genreMap = new Map();
+    L.songs.forEach((s, i) => { const g = s.g || "No genre"; if (!genreMap.has(g)) genreMap.set(g, []); genreMap.get(g).push(i); });
+    $("nArtists").textContent = artists.length; $("nAlbums").textContent = L.albums.length; $("nSongs").textContent = L.songs.length;
+    $("navPlaylists").replaceChildren(...L.playlists.map((p, i) => h("a", { href: "#playlists" }, icon("list"), p.name)));
+    setIdle();
+  }
+  const artistOf = name => artists.find(a => norm(a.name) === norm(name));
+  const albumSongs = al => al.songs.map(i => L.songs[i]);
+
+  // ---------- views ----------
+  const VIEWS = {
+    recent: viewRecent, albums: viewAlbums, album: viewAlbum, artists: viewArtists, artist: viewArtist,
+    songs: viewSongs, genres: viewGenres, genre: viewGenre, get: viewGet, activity: viewActivity,
+    playlists: viewPlaylists, prefs: viewPrefs,
+  };
+  function route() {
+    const raw = (location.hash || "#recent").slice(1);
+    const [name, ...rest] = raw.split("-");
+    const arg = rest.join("-");
+    const fn = VIEWS[name] || viewRecent;
+    document.querySelectorAll(".nav a").forEach(a => {
+      const target = a.getAttribute("href").slice(1);
+      const match = target === name || (name === "album" && target === "albums") || (name === "artist" && target === "artists") || (name === "genre" && target === "genres");
+      a.toggleAttribute("aria-current", match); if (match) a.setAttribute("aria-current", "page");
+    });
+    $("app").classList.remove("open");
+    if (!L) { view.replaceChildren(h("div", { class: "empty" }, "Loading your library…")); return; }
+    view.replaceChildren(fn(decodeURIComponent(arg)));
+    view.scrollTop = 0;
+  }
+  const go = hash => { if (location.hash === "#" + hash) route(); else location.hash = hash; };
+
+  function head(title, sub, ...actions) {
+    return h("div", { class: "head" }, h("div", {}, h("h1", {}, title), sub ? h("p", { class: "sub" }, sub) : null), actions.length ? h("div", { class: "row" }, actions) : null);
+  }
+  function albumTile(al) {
+    return h("a", { class: "tile", href: "#album-" + al.id }, cover(al), h("span", { class: "t1" }, al.name), h("span", { class: "t2" }, al.artist));
+  }
+
+  function viewRecent() {
+    const sorted = [...L.albums].sort((a, b) => b.added - a.added);
+    return h("div", {}, head("Recently Added"), h("div", { class: "grid" }, sorted.slice(0, 60).map(albumTile)));
+  }
+  function lastRun() {   // songs added in the most recent session (within 3 h of the newest)
+    if (!L.songs.length) return null;
+    const newest = Math.max(...L.songs.map(s => s.add));
+    return L.songs.map((s, i) => [s, i]).filter(([s]) => newest - s.add < 3 * 3600).map(([, i]) => i);
+  }
+  function summarizeGenres(idxs) {
+    const c = new Map(); idxs.forEach(i => { const g = L.songs[i].g || "No genre"; c.set(g, (c.get(g) || 0) + 1); });
+    return [...c].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g, n]) => `${g} ${n}`).join(", ");
+  }
+
+  let albumSort = "recent";
+  function viewAlbums() {
+    const sorts = {
+      recent: (a, b) => b.added - a.added,
+      artist: (a, b) => a.artist.localeCompare(b.artist, undefined, { sensitivity: "base" }) || a.name.localeCompare(b.name),
+      title: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      year: (a, b) => (b.year || 0) - (a.year || 0),
+    };
+    const grid = h("div", { class: "grid" });
+    const fill = () => grid.replaceChildren(...[...L.albums].sort(sorts[albumSort]).map(albumTile));
+    const sel = h("select", { class: "select", id: "albumSort", "aria-label": "Sort albums", onchange: e => { albumSort = e.target.value; fill(); } },
+      ...Object.entries({ recent: "Recently Added", artist: "Artist", title: "Title", year: "Year" }).map(([v, t]) => h("option", { value: v, selected: v === albumSort }, t)));
+    fill();
+    return h("div", {}, head("Albums", `${plural(L.albums.length, "album")}, singles included`, sel), grid);
+  }
+
+  function viewAlbum(id) {
+    const al = L.albums[+id];
+    if (!al) return h("div", { class: "empty" }, "That album isn't in your library.");
+    const songs = albumSongs(al).sort((a, b) => (a.n || 99) - (b.n || 99) || a.t.localeCompare(b.t));
+    const total = songs.reduce((t, s) => t + s.len, 0);
+    const isSingle = songs.length === 1 && norm(songs[0].t) === norm(al.name);
+    const a = artistOf(al.artist);
+    const tickets = norm(al.name).includes("tickets to my downfall");
+    const frag = h("div", {});
+    frag.append(h("div", { class: "album-hero" }, cover(al),
+      h("div", {},
+        h("h1", {}, al.name),
+        a ? h("a", { class: "by", href: "#artist-" + a.id }, al.artist) : h("span", { class: "by" }, al.artist),
+        h("p", { class: "meta" }, [al.genre || "No genre", al.year, isSingle ? "Single" : null].filter(Boolean).join(" · ")),
+        h("p", { class: "note" }, `${plural(songs.length, "song")}, ${Math.round(total / 60)} min · ${songs[0].ext.toUpperCase()}`),
+        h("div", { class: "row" },
+          h("button", { class: "btn", type: "button", onclick: () => toast(`Would open ${L.folder}\\${songs[0].f}`) }, icon("folder"), "Show in Folder"),
+          h("button", { class: "btn", type: "button", onclick: () => toast("Would re-pick this album's genre with your current genre settings") }, icon("refresh"), "Re-file Genre")),
+        !isSingle && (tickets || songs.length > 1) ? h("div", { class: "callout" },
+          h("span", {}, h("b", {}, `You have ${plural(songs.length, "song")}`), tickets ? " of 15 on the standard edition." : " from this album."),
+          h("button", { class: "btn primary", type: "button", onclick: () => { getState.q = `${al.name} ${al.artist}`; getState.pick = tickets ? 0 : null; go("get"); } }, icon("get"), "Get the Rest")) : null)));
+    frag.append(h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, h("th", { class: "num" }, "#"), h("th", {}, "Title"), h("th", {}, "File"), h("th", { class: "time" }, "Time"))),
+      h("tbody", {}, songs.map((s, i) => h("tr", { class: "r" },
+        h("td", { class: "num" }, s.n || i + 1), h("td", {}, s.t), h("td", { class: "dim" }, s.f), h("td", { class: "time" }, mins(s.len)))))));
+    return frag;
+  }
+
+  let artistSort = "name";
+  function viewArtists() {
+    const sorts = {
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      songs: (a, b) => b.songs - a.songs || a.name.localeCompare(b.name),
+      recent: (a, b) => Math.max(...b.albums.map(x => x.added)) - Math.max(...a.albums.map(x => x.added)),
+    };
+    const grid = h("div", { class: "avatars" });
+    const fill = () => grid.replaceChildren(...[...artists].sort(sorts[artistSort]).map(a => h("a", { class: "avatar", href: "#artist-" + a.id },
+      a.albums[0].cover ? h("img", { src: a.albums[0].cover, alt: "", loading: "lazy" }) : placeholder(a.name, "art-ph"),
+      h("span", {}, a.name), h("small", {}, plural(a.songs, "song")))));
+    const sel = h("select", { class: "select", id: "artistSort", "aria-label": "Sort artists", onchange: e => { artistSort = e.target.value; fill(); } },
+      Object.entries({ name: "Name", songs: "Most Songs", recent: "Recently Added" }).map(([v, t]) => h("option", { value: v, selected: v === artistSort }, t)));
+    fill();
+    return h("div", {}, head("Artists", plural(artists.length, "artist"), sel), grid);
+  }
+  function viewArtist(id) {
+    const a = artists[+id];
+    if (!a) return h("div", { class: "empty" }, "That artist isn't in your library.");
+    const songs = a.albums.flatMap(al => al.songs);
+    return h("div", {},
+      head(a.name, `${plural(a.albums.length, "album")} · ${plural(a.songs, "song")}`,
+        h("button", { class: "btn", type: "button", onclick: () => { getState.q = a.name; getState.tab = "albums"; go("get"); } }, icon("search"), "Find More by " + a.name)),
+      h("div", { class: "grid" }, a.albums.map(albumTile)),
+      h("h2", { class: "section-title" }, "Songs"), songTable(songs, { artist: false }));
+  }
+
+  let songSort = { key: "add", dir: -1 }, songFilter = "";
+  function songTable(idxs, opts = {}) {
+    const cols = [
+      { key: "t", label: "Title" },
+      opts.artist !== false ? { key: "a", label: "Artist" } : null,
+      { key: "al", label: "Album" },
+      { key: "g", label: "Genre" },
+      { key: "y", label: "Year" },
+      { key: "len", label: "Time", cls: "time" },
+    ].filter(Boolean);
+    const tbody = h("tbody", {});
+    const thead = h("thead", {});
+    function draw() {
+      const f = norm(songFilter);
+      let rows = idxs.map(i => L.songs[i]);
+      if (f && opts.filterable) rows = rows.filter(s => norm(`${s.t} ${s.a} ${s.al} ${s.g}`).includes(f));
+      const k = songSort.key, d = songSort.dir;
+      rows.sort((x, y) => { const a = x[k] ?? "", b = y[k] ?? ""; return (typeof a === "number" ? a - b : String(a).localeCompare(String(b), undefined, { sensitivity: "base" })) * d; });
+      thead.replaceChildren(h("tr", {}, cols.map(c => h("th", {
+        class: "sortable " + (c.cls || ""), scope: "col", tabindex: "0",
+        "aria-sort": songSort.key === c.key ? (songSort.dir > 0 ? "ascending" : "descending") : "none",
+        onclick: () => { songSort = { key: c.key, dir: songSort.key === c.key ? -songSort.dir : 1 }; draw(); },
+        onkeydown: e => { if (e.key === "Enter") e.target.click(); },
+      }, c.label + (songSort.key === c.key ? (songSort.dir > 0 ? " ↑" : " ↓") : "")))));
+      tbody.replaceChildren(...rows.slice(0, 600).map(s => {
+        const al = L.albums[s.alb], ar = artistOf(s.a);
+        return h("tr", { class: "r" }, cols.map(c => {
+          if (c.key === "t") return h("td", {}, h("div", { class: "ttl" }, cover(al, ""), h("span", {}, s.t)));
+          if (c.key === "a") return h("td", { class: "dim" }, ar ? h("a", { href: "#artist-" + ar.id }, s.a) : s.a);
+          if (c.key === "al") return h("td", { class: "dim" }, h("a", { href: "#album-" + s.alb }, s.al || al.name));
+          if (c.key === "g") return h("td", { class: "dim" }, s.g ? h("a", { href: "#genre-" + slug(s.g) }, s.g) : h("span", { class: "chip warn" }, "None"));
+          if (c.key === "len") return h("td", { class: "time" }, mins(s.len));
+          return h("td", { class: "dim" }, s[c.key] ?? "");
+        }));
+      }));
+    }
+    draw();
+    return h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" }, thead, tbody));
+  }
+  function viewSongs() {
+    const idxs = L.songs.map((_, i) => i);
+    const holder = h("div", {});
+    const input = h("input", { class: "select", id: "songFilter", type: "search", placeholder: "Filter songs", "aria-label": "Filter songs", value: songFilter, style: "width:200px",
+      oninput: e => { songFilter = e.target.value; holder.replaceChildren(songTable(idxs, { filterable: true })); } });
+    holder.append(songTable(idxs, { filterable: true }));
+    return h("div", {}, head("Songs", `${plural(L.songs.length, "song")} · files in ${L.folder}`, input), holder);
+  }
+
+  function genreCard(g, idxs) {
+    const albs = [...new Set(idxs.map(i => L.songs[i].alb))].map(i => L.albums[i]).filter(a => a.cover).slice(0, 4);
+    while (albs.length && albs.length < 4) albs.push(albs[albs.length % albs.length]);
+    return h("a", { class: "gcard", href: "#genre-" + slug(g) },
+      h("div", { class: "mosaic" }, albs.map(a => h("img", { src: a.cover, alt: "", loading: "lazy" }))),
+      h("div", { class: "shade" }), h("div", { class: "lbl" }, h("b", {}, g), h("small", {}, plural(idxs.length, "song"))));
+  }
+  function viewGenres() {
+    const how = ({ track: "song, then album, then artist", album: "album, then artist", artist: "artist" })[prefsState.source];
+    return h("div", {},
+      head("Genres", `Last.fm tags, looked up by ${how}, climb this tree to the nearest genre on your list`),
+      genreExplorer("library", libPath));
+  }
+  function viewGenre(sl) {   // deep link from "Review genres": open the tree at that genre
+    const raw = norm(decodeURIComponent(sl).replace(/-/g, " "));
+    const name = G ? (Object.keys(G.nodes).find(n => norm(n) === raw) || raw) : raw;
+    libPath.sel = name;
+    return viewGenres();
+  }
+
+  // ---------- get music ----------
+  const getState = { q: "", tab: "albums", pick: null, edition: null, chosen: null, mode: "search", path: [] };
+  let G = null, gLoading = false;   // genres.json: tree + Last.fm top albums per genre
+
+  function modeSwitch() {
+    return h("div", { class: "mode-switch" }, h("div", { class: "seg", role: "group", "aria-label": "How to find music" },
+      [["search", "Search"], ["browse", "Browse by Genre"]].map(([m, t]) => h("button", { type: "button", "aria-pressed": String(getState.mode === m),
+        onclick: () => { getState.mode = m; route(); } }, t))));
+  }
+
+  // ----- the genre tree: one explorer for the Genres tab (with Edit) and Get Music -----
+  const parentMap = () => G[prefsState.family === "sound" ? "sound" : "hist"];
+  const tc = s => s.replace(/(^|[\s\-&\/])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+  const gEdit = { on: false, picked: null, moves: {}, before: null };
+  const pickedSet = () => gEdit.picked || (gEdit.picked = new Set((L.genres || []).map(g => g.toLowerCase())));
+  const parentOf = n => Object.prototype.hasOwnProperty.call(gEdit.moves, n) ? (gEdit.moves[n] || null) : parentMap()[n];
+  function chainOf(n) { const out = []; while (n && out.length < 40) { out.push(n); n = parentOf(n); } return out; }
+  const filedUnder = n => chainOf(n).find(g => pickedSet().has(g)) || null;
+  function gkids(g) { return Object.keys(G.nodes).filter(n => parentOf(n) === g); }
+  const gtops = () => Object.keys(G.nodes).filter(n => !parentOf(n));
+  function subtreeLib(g, seen = new Set()) {
+    if (seen.has(g)) return new Set(); seen.add(g);
+    const out = new Set(G.nodes[g] ? G.nodes[g].lib : []);
+    gkids(g).forEach(k => subtreeLib(k, seen).forEach(i => out.add(i)));
+    return out;
+  }
+  const libCount = new Map();
+  const countOf = g => { if (!libCount.has(g)) libCount.set(g, subtreeLib(g).size); return libCount.get(g); };
+  function ownedAlbum(title, artist) {
+    const t = norm(title), a = norm(artist);
+    return L.albums.find(al => norm(al.name) === t && (norm(al.artist).includes(a) || a.includes(norm(al.artist)) || !a)) ||
+      L.albums.find(al => norm(al.name) === t);
+  }
+  function loadGenres(box, back) {
+    box.append(h("div", { class: "empty" }, "Loading the genre tree…"));
+    if (!gLoading) {
+      gLoading = true;
+      load("genres")
+        .then(d => { G = d; if ((location.hash || "").startsWith("#" + back)) route(); })
+        .catch(err => { gLoading = false; box.replaceChildren(h("div", { class: "empty" }, `Couldn't load the genre tree (${errText(err)}).`)); });
+    }
+    return box;
+  }
+  const libPath = { sel: null };
+  // One genre explorer, two behaviours:
+  //  - browsing (Genres tab and Get Music): click a box to select it; the panel beside the
+  //    chart shows its music while you keep exploring. Nothing else changes.
+  //  - in the Genres tab you can also drag a box onto another to move it, and switch a genre on
+  //    or off in the panel. A save bar appears once something changed; nothing changes by accident.
+  // Clicks redraw the explorer in place (never the whole page), so nothing jumps.
+  function genreExplorer(ctx, st) {
+    const box = h("div", { class: "browse in-lib" });
+    if (!G) return loadGenres(box, ctx === "get" ? "get" : "genre");
+    function render() {
+      const old = box.querySelector(".ochart");
+      if (old) { chartView.sx = old.scrollLeft; chartView.sy = old.scrollTop; }
+      libCount.clear();
+      const canEdit = ctx === "library";
+      if (canEdit) baseline();
+      if (st.sel && !G.nodes[st.sel]) st.sel = null;
+      const grouping = h("div", { class: "seg", role: "group", "aria-label": "Group sub-genres by" },
+        [["history", "Music history"], ["sound", "Sounds like"]].map(([v, t]) => h("button", { type: "button", "aria-pressed": String(prefsState.family === v),
+          onclick: () => { prefsState.family = v; chartView.open.clear(); chartView.sx = null; render(); } }, t)));
+      // where each song's Last.fm tags come from: its own, its album's, or its artist's
+      const lookup = h("div", { class: "row", style: "gap:6px" }, h("span", { class: "note" }, "Genre from"),
+        h("div", { class: "seg lookup-seg", role: "group", "aria-label": "Take each song's genre from" },
+          [["track", "Song"], ["album", "Album"], ["artist", "Artist"]].map(([v, t]) => h("button", { type: "button", "aria-pressed": String(prefsState.source === v),
+            title: { track: "The song's own tags, then its album's, then its artist's", album: "The album's tags, then the artist's: songs on one album stay together", artist: "The artist's tags: everything by one artist gets the same genre" }[v],
+            onclick: () => { prefsState.source = v; render(); } }, t))));
+      const top = h("div", { class: "gdetail-head" },
+        h("p", { class: "note" }, ctx === "get" ? "Click a genre to see what's popular in it" : "Click a genre to see your music in it. Drag a box onto another to move it."),
+        h("div", { class: "row" }, grouping, canEdit ? lookup : null));
+      const chart = orgChart({
+        canEdit, discover: ctx === "get", sel: st.sel,
+        onSelect: n => { st.sel = n; chartView.hidden.delete(n); render(); },
+        onChange: render,
+        onMove: (g, parent) => {
+          const own = parentMap()[g] || null;
+          if ((parent || null) === own) delete gEdit.moves[g]; else gEdit.moves[g] = parent || null;
+          if (parent) pickedSet().delete(g);   // off, so its songs go to the new parent
+          toast(parent ? `${tc(g)} is now under ${tc(parent)}` : `${tc(g)} is now a top-level genre`);
+          st.sel = g;   // show where it went, with a way to put it back
+          render();
+        },
+      });
+      const bar = canEdit && editChanges().length ? editBar(render) : null;
+      box.replaceChildren(top, h("div", { class: "gsplit" }, h("div", { class: "gleft" }, chart, bar), genrePanel(ctx, st, render)));
+    }
+    render();
+    return box;
+  }
+
+  function genrePanel(ctx, st, render) {
+    const p = h("aside", { class: "gpanel", "aria-live": "polite", "aria-label": "Music in this genre" });
+    const sel = st.sel;
+    if (!sel) {
+      p.append(h("h3", {}, ctx === "get" ? "Pick a genre" : "Your genres"),
+        h("p", { class: "note" }, ctx === "get" ? "Click any box in the chart. Popular albums for it show up here while you keep exploring."
+          : "Click a box to see your music in that genre. These are the genres your songs are filed under:"));
+      if (ctx === "library") p.append(h("div", { class: "glist" }, [...genreMap].sort((a, b) => b[1].length - a[1].length).map(([g, idxs]) => {
+        const name = Object.keys(G.nodes).find(n => norm(n) === norm(g));
+        return h("button", { class: "gitem", type: "button", disabled: !name, onclick: () => { if (name) { st.sel = name; chartView.hidden.delete(name); render(); } } },
+          h("span", {}, g), h("span", { class: "note" }, idxs.length));
+      })));
+      return p;
+    }
+    const node = G.nodes[sel];
+    const tagged = [...subtreeLib(sel)];
+    const filed = L.songs.filter(s => (s.g || "").toLowerCase() === sel).length;
+    const parents = chainOf(sel).slice(1).reverse().map(tc);
+    const on = pickedSet().has(sel), goesTo = filedUnder(sel);
+    const moved = Object.prototype.hasOwnProperty.call(gEdit.moves, sel);
+    const homeParent = parentMap()[sel];
+    const toggle = ctx === "library" ? h("label", { class: "ptoggle" },
+      h("span", {}, h("b", {}, `File songs under ${tc(sel)}`),
+        h("small", {}, on ? "On. Songs tagged with it or anything below it get this genre." : goesTo ? `Off. Its songs get ${tc(goesTo)}.` : "Off. Its songs get no genre from it.")),
+      h("span", { class: "switch" }, h("input", { type: "checkbox", id: "fileHere", role: "switch", checked: on,
+        onchange: () => { on ? pickedSet().delete(sel) : pickedSet().add(sel); render(); } }), h("span", {}))) : null;
+    const movedNote = ctx === "library" && moved ? h("div", { class: "row note" },
+      `Moved here from ${homeParent ? tc(homeParent) : "the top level"}.`,
+      h("button", { class: "btn small", type: "button", onclick: () => { delete gEdit.moves[sel]; toast(`${tc(sel)} is back under ${homeParent ? tc(homeParent) : "the top level"}`); render(); } }, "Put Back")) : null;
+    p.append(h("div", {},
+      h("p", { class: "note" }, parents.length ? parents.join(" › ") : "Top-level genre"),
+      h("h3", {}, tc(sel)),
+      h("div", { class: "row", style: "margin-top:6px" },
+        ctx === "get" ? (tagged.length ? h("span", { class: "chip ok" }, icon("check"), `You have ${plural(tagged.length, "song")} in this genre`) : h("span", { class: "chip mute" }, "None in your library yet"))
+          : on ? h("span", { class: "chip ok" }, icon("check"), `On your list · ${plural(filed, "song")} filed here`)
+          : h("span", { class: "chip mute" }, goesTo ? `Off · filed under ${tc(goesTo)}` : "Off · not on your list"),
+        ctx === "library" && tagged.length ? h("span", { class: "chip mute" }, plural(tagged.length, "song") + " tagged") : null),
+      h("div", { class: "row", style: "margin-top:8px" },
+        ctx === "library" ? h("button", { class: "btn small", type: "button", onclick: () => { getState.mode = "browse"; getState.sel = sel; go("get"); } }, icon("get"), "Find More")
+          : h("button", { class: "btn small", type: "button", onclick: () => { libPath.sel = sel; go("genres"); } }, icon("tag"), "In My Library"))),
+      ...[toggle, movedNote].filter(Boolean));
+    const popular = [h("h4", { class: "ptitle" }, "Popular on Last.fm"),
+      node.albums == null ? popularPending(sel, node, () => { if (st.sel === sel && document.body.contains(p)) render(); })
+        : node.albums.length ? h("div", { class: "pop-grid" }, node.albums.map(a => popTile(a))) : h("p", { class: "note" }, "Last.fm has no top albums for this tag.")];
+    const albs = [...new Set(tagged.map(i => L.songs[i].alb))].map(i => L.albums[i]).sort((a, b) => b.added - a.added);
+    const yours = [h("h4", { class: "ptitle" }, "In your library", h("span", { class: "note" }, albs.length ? plural(albs.length, "album") : "")),
+      albs.length ? h("div", { class: "grid" }, albs.slice(0, 18).map(albumTile)) : h("p", { class: "note" }, "None of your songs have this tag yet.")];
+    p.append(...(ctx === "library" ? [...yours, ...popular] : [...popular, ...yours]));
+    return p;
+  }
+
+  // ----- the org chart -----
+  const chartView = { zoom: 1, sx: null, sy: null, open: new Set(), hidden: new Set() };
+  // dragging and panning use window listeners (like the genre picker), set up once
+  const cdrag = { src: null, x: 0, y: 0, on: false, ghost: null, target: null, onMove: null, done: false };
+  const cpan = { el: null, x: 0, y: 0, l: 0, t: 0 };
+  window.addEventListener("pointermove", e => {
+    if (cpan.el) { cpan.el.scrollLeft = cpan.l - (e.clientX - cpan.x); cpan.el.scrollTop = cpan.t - (e.clientY - cpan.y); return; }
+    if (!cdrag.src) return;
+    if (!cdrag.on) {
+      if (Math.hypot(e.clientX - cdrag.x, e.clientY - cdrag.y) < 6) return;
+      cdrag.on = true; cdrag.ghost = h("div", { class: "drag-ghost" }, tc(cdrag.src)); document.body.append(cdrag.ghost);
+      document.body.classList.add("dragging-box");
+    }
+    cdrag.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 8}px)`;
+    cdrag.px = e.clientX; cdrag.py = e.clientY;
+    dropTarget();
+    if (!cdrag.raf) cdrag.raf = requestAnimationFrame(edgeScroll);
+  });
+  function dropTarget() {
+    const t = document.elementFromPoint(cdrag.px, cdrag.py)?.closest(".ochart .ocard[data-name], .ochart .ocard[data-root]");
+    const to = t ? (t.dataset.root ? "" : t.dataset.name) : null;
+    const ok = t && to !== cdrag.src && !(to && chainOf(to).includes(cdrag.src));
+    if (cdrag.target && cdrag.target !== t) cdrag.target.classList.remove("drop-here");
+    cdrag.target = ok ? t : null;
+    if (ok) t.classList.add("drop-here");
+  }
+  // Holding a box near an edge keeps scrolling (every frame, not just when the mouse moves),
+  // faster the closer it is; past the chart's end the page itself scrolls.
+  const EDGE = 70, MAX_STEP = 22;
+  const edgeSpeed = d => d >= EDGE ? 0 : Math.ceil(MAX_STEP * (1 - Math.max(d, -EDGE) / EDGE) / 2);
+  function edgeScroll() {
+    cdrag.raf = 0;
+    const chart = document.querySelector(".ochart"), page = $("view");
+    if (!cdrag.on || !chart) return;
+    const r = chart.getBoundingClientRect(), x = cdrag.px, y = cdrag.py;
+    const dx = edgeSpeed(r.right - x) - edgeSpeed(x - r.left);
+    const dy = edgeSpeed(Math.min(r.bottom, innerHeight) - y) - edgeSpeed(y - Math.max(r.top, 0));
+    const before = [chart.scrollLeft, chart.scrollTop, page.scrollTop];
+    chart.scrollLeft += dx; chart.scrollTop += dy;
+    if (dy && chart.scrollTop === before[1]) page.scrollTop += dy;
+    if (chart.scrollLeft !== before[0] || chart.scrollTop !== before[1] || page.scrollTop !== before[2]) dropTarget();
+    if (dx || dy) cdrag.raf = requestAnimationFrame(edgeScroll);
+  }
+  const endDrag = () => {
+    if (cpan.el) { cpan.el.classList.remove("panning"); cpan.el = null; }
+    if (cdrag.src && cdrag.on) {
+      cdrag.ghost.remove(); document.body.classList.remove("dragging-box");
+      cdrag.done = true; setTimeout(() => cdrag.done = false, 0);   // swallow the click that follows a drop
+      const t = cdrag.target, src = cdrag.src, onMove = cdrag.onMove;
+      if (t) { t.classList.remove("drop-here"); onMove(src, t.dataset.root ? null : t.dataset.name); }
+    }
+    cdrag.src = null; cdrag.on = false; cdrag.target = null;
+  };
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", endDrag);
+
+  function orgChart(o) {
+    const picked = pickedSet();
+    const isMoved = n => Object.prototype.hasOwnProperty.call(gEdit.moves, n);
+    // Shown as boxes: genres on the list, moved ones, and (when browsing) the selected genre's
+    // line; plus everything above them. The rest of a parent's children wait in one "+N off" box.
+    const anchors = new Set([...picked, ...Object.keys(gEdit.moves), ...(o.sel ? chainOf(o.sel) : [])].filter(n => G.nodes[n]));
+    const above = new Set(); anchors.forEach(a => chainOf(a).slice(1).forEach(p => above.add(p)));
+    const shows = n => anchors.has(n) || above.has(n);
+    // the library chart orders by your songs; the discovery chart by how many styles a genre has
+    const size = n => { let k = 0; const walk = g => gkids(g).forEach(c => { k++; walk(c); }); walk(n); return k; };
+    const byCount = o.discover ? (a, b) => size(b) - size(a) || a.localeCompare(b) : (a, b) => countOf(b) - countOf(a) || a.localeCompare(b);
+
+    function card(n) {
+      const cnt = countOf(n), on = !o.discover && picked.has(n), styles = gkids(n).length;
+      const c = h("button", { class: "ocard" + (o.discover ? " disc" : on ? " on" : "") + (n === o.sel ? " sel" : "") + (isMoved(n) ? " moved" : ""), type: "button", "data-name": n,
+        "aria-pressed": String(n === o.sel), title: `Show ${tc(n)}` + (o.canEdit ? " (drag to move it)" : "") },
+        h("span", { class: "nm" }, tc(n)),
+        o.discover ? h("span", { class: "ct" }, styles ? plural(styles, "style") : "")
+          : h("span", { class: "ct" }, cnt ? plural(cnt, "song") : "none of yours"),
+        o.discover ? null : h("span", { class: "obar", "aria-hidden": "true" }, h("i", { style: `width:${Math.min(100, Math.round(cnt / L.songs.length * 300))}%` })),
+        isMoved(n) ? h("span", { class: "mv" }, "moved") : null);
+      c.addEventListener("click", () => {
+        if (cdrag.done) return;
+        o.onSelect(n);
+      });
+      if (o.canEdit) c.addEventListener("pointerdown", e => {
+        if (e.button !== 0) return;
+        Object.assign(cdrag, { src: n, x: e.clientX, y: e.clientY, on: false, target: null, onMove: o.onMove });
+      });
+      return c;
+    }
+    function drawer(key, off) {
+      const open = chartView.open.has(key) || (key === o.sel && !chartView.hidden.has(key));
+      if (!open) {
+        const withSongs = off.filter(k => countOf(k)).length;
+        return h("li", {}, h("button", { class: "ocard more", type: "button", onclick: () => { chartView.open.add(key); chartView.hidden.delete(key); o.onChange(); } },
+          h("span", { class: "nm" }, o.discover ? `+${off.length} more` : `+${off.length} off`),
+          h("span", { class: "ct" }, o.discover ? "styles" : withSongs ? `${withSongs} with your songs` : "none with your songs")));
+      }
+      return h("li", {}, h("div", { class: "odrawer" },
+        h("div", { class: "odrawer-top" }, h("button", { class: "btn small", type: "button", onclick: () => { chartView.open.delete(key); chartView.hidden.add(key); o.onChange(); } }, "Hide"),
+          h("span", {}, o.discover ? `${off.length} more styles` : `${off.length} off, most of your songs first`)),
+        h("div", { class: "odrawer-grid" }, off.map(card))));
+    }
+    function branch(n) {
+      const li = h("li", {}, card(n));
+      const kids = gkids(n).sort(byCount);
+      if (!kids.length || !(anchors.has(n) || above.has(n))) return li;
+      const ul = h("ul", {});
+      kids.filter(shows).forEach(k => ul.append(branch(k)));
+      const off = kids.filter(k => !shows(k));
+      if (off.length) ul.append(drawer(n, off));
+      li.append(ul);
+      return li;
+    }
+    const tops = gtops().sort(byCount);
+    const topUl = h("ul", {});
+    tops.filter(shows).forEach(t => topUl.append(branch(t)));
+    const offTops = tops.filter(t => !shows(t));
+    if (offTops.length) topUl.append(drawer("__top", offTops));
+    const root = o.discover
+      ? h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "All music"), h("span", { class: "ct" }, plural(tops.length, "genre")))
+      : h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "Your library"), h("span", { class: "ct" }, plural(L.songs.length, "song")));
+    const org = h("ul", { class: "org", style: `--zoom:${chartView.zoom}` }, h("li", {}, root, topUl));
+    const chart = h("div", { class: "ochart" + (o.canEdit ? " can-edit" : "") }, org);
+    chart.addEventListener("pointerdown", e => {   // drag empty space to pan
+      if (e.button !== 0 || e.target.closest("button")) return;
+      Object.assign(cpan, { el: chart, x: e.clientX, y: e.clientY, l: chart.scrollLeft, t: chart.scrollTop });
+      chart.classList.add("panning");
+    });
+    chart.addEventListener("scroll", () => { chartView.sx = chart.scrollLeft; chartView.sy = chart.scrollTop; });
+    requestAnimationFrame(() => {
+      if (chartView.sx != null) { chart.scrollLeft = chartView.sx; chart.scrollTop = chartView.sy; }
+      else chart.scrollLeft = (chart.scrollWidth - chart.clientWidth) / 2;   // first look: centred under "Your library"
+    });
+    const zv = h("output", {}, Math.round(chartView.zoom * 100) + "%");
+    const setZoom = z => { chartView.zoom = Math.min(1.6, Math.max(0.35, Math.round(z * 100) / 100)); org.style.setProperty("--zoom", chartView.zoom); zv.textContent = Math.round(chartView.zoom * 100) + "%"; };
+    const tools = h("div", { class: "row ozoom" },
+      h("span", { class: "note legend" }, o.discover ? "Click a genre to see its popular albums. Click again deeper to narrow it down." : "Green: on your list. Dashed: off, its songs go to the nearest green box above."
+        + (o.canEdit ? " Drop a box on “Your library” to make it top-level." : "")),
+      h("button", { class: "btn small", type: "button", "aria-label": "Zoom out", onclick: () => setZoom(chartView.zoom - 0.1) }, "−"), zv,
+      h("button", { class: "btn small", type: "button", "aria-label": "Zoom in", onclick: () => setZoom(chartView.zoom + 0.1) }, "+"),
+      h("button", { class: "btn small", type: "button", onclick: () => { setZoom((chart.clientWidth - 32) / (org.getBoundingClientRect().width / chartView.zoom)); chart.scrollLeft = 0; } }, "Fit"));
+    return h("div", { class: "ochart-wrap" }, tools, chart);
+  }
+
+  // ----- editing the genre tree (the genre chart, built in) -----
+  function useSavedRules() {   // the app sends the settings in use; the mockup keeps its defaults
+    const r = L.genre_rules;
+    if (!r) return;
+    prefsState.source = r.source; prefsState.family = r.family;
+    gEdit.moves = { ...r.moves }; gEdit.picked = new Set(r.list); gEdit.before = null;
+  }
+  const rulesNow = () => ({ list: [...pickedSet()], source: prefsState.source, family: prefsState.family, moves: { ...gEdit.moves } });
+  function reloadLibrary() {   // after a re-file: songs have new genres, so the tree's counts change too
+    return load("data").then(d => {
+      L = d; G = null; gLoading = false; libCount.clear(); albumsAsked.clear();
+      useSavedRules(); derive(); route();
+    });
+  }
+  function watchRefile() {
+    const total = L.songs.length;
+    const tick = () => apiReady.then(() => window.pywebview.api.refile_status()).then(st => {
+      if (st.running) {
+        $("lcdTitle").textContent = "Re-filing genres";
+        $("lcdSub").textContent = `${st.done} of ${plural(total, "song")}`;
+        $("lcdBar").style.width = Math.min(100, Math.round(st.done / total * 100)) + "%";
+        setTimeout(tick, 700);
+        return;
+      }
+      $("lcdBar").style.width = "0";
+      toast(st.code === 0 ? `Genres re-filed: ${plural(st.done, "song")} checked${st.kept ? `, ${st.kept} set by hand kept` : ""}`
+        : `Re-filing stopped with a problem: ${st.errors.slice(-1)[0] || "exit code " + st.code}`);
+      reloadLibrary().catch(e => toast(`Couldn't reload the library (${errText(e)})`));
+    }, e => toast(`Lost track of the re-file (${errText(e)})`));
+    tick();
+  }
+  function baseline() {   // the saved state that changes are counted against
+    if (!gEdit.before) gEdit.before = { picked: new Set(pickedSet()), moves: { ...gEdit.moves }, family: prefsState.family, source: prefsState.source };
+  }
+  function editChanges() {
+    const b = gEdit.before, out = [];
+    pickedSet().forEach(g => { if (!b.picked.has(g)) out.push(`${tc(g)} on`); });
+    b.picked.forEach(g => { if (!pickedSet().has(g)) out.push(`${tc(g)} off`); });
+    Object.keys({ ...b.moves, ...gEdit.moves }).forEach(g => { if (b.moves[g] !== gEdit.moves[g]) out.push(`${tc(g)} → ${gEdit.moves[g] ? tc(gEdit.moves[g]) : (g in gEdit.moves ? "top level" : "back")}`); });
+    if (b.family !== prefsState.family) out.push(prefsState.family === "sound" ? "Grouped by sound" : "Grouped by history");
+    if (b.source !== prefsState.source) out.push(`Look up by ${prefsState.source === "track" ? "song" : prefsState.source}`);
+    return out;
+  }
+  // Mockup estimate of songs your edits move: each song goes to the genre on the list above its
+  // most specific tag, worked out with the saved settings and with your changes; count the
+  // songs where those differ. (The app runs the real genre rules on each song's saved tags.)
+  function songsThatMove() {
+    const tagsOf = new Map();
+    Object.entries(G.nodes).forEach(([g, n]) => n.lib.forEach(i => { if (!tagsOf.has(i)) tagsOf.set(i, []); tagsOf.get(i).push(g); }));
+    const estimate = () => {
+      const out = new Map();
+      tagsOf.forEach((tags, i) => out.set(i, filedUnder([...tags].sort((a, b) => chainOf(b).length - chainOf(a).length)[0])));
+      return out;
+    };
+    const now = estimate();
+    const b = gEdit.before, keep = { picked: gEdit.picked, moves: gEdit.moves, family: prefsState.family };
+    gEdit.picked = b.picked; gEdit.moves = b.moves; prefsState.family = b.family;
+    const saved = estimate();
+    gEdit.picked = keep.picked; gEdit.moves = keep.moves; prefsState.family = keep.family;
+    let moved = 0;
+    now.forEach((g, i) => { if (g !== saved.get(i)) moved++; });
+    return moved;
+  }
+  function editBar(refresh) {
+    const changes = editChanges();
+    return h("div", { class: "editbar" },
+      h("div", { style: "min-width:0" }, h("b", {}, plural(changes.length, "unsaved change")),
+        h("p", { class: "note" }, changes.slice(0, 4).join(" · ") + (changes.length > 4 ? " · …" : ""))),
+      h("div", { class: "row" },
+        h("button", { class: "btn", type: "button", onclick: () => { const b = gEdit.before; gEdit.picked = new Set(b.picked); gEdit.moves = { ...b.moves };
+          prefsState.family = b.family; prefsState.source = b.source; toast("Changes discarded"); refresh(); } }, "Discard"),
+        h("button", { class: "btn primary", type: "button", onclick: () => saveSheet(changes) }, "Save…")));
+  }
+  function saveSheet(changes) {
+    const n = IN_APP ? 0 : songsThatMove();
+    const close = () => back.remove();
+    let refile = false, busy = false;
+    const refileDesc = h("span", {}, IN_APP ? "Counting exactly which songs would move…"
+      : n ? `About ${plural(n, "song")} would move. Genres you set by hand stay.` : "No songs would move.");
+    if (IN_APP) apiReady.then(() => window.pywebview.api.preview_genres(rulesNow())).then(pv => {
+      const moves = pv.top.map(m => `${m.from} → ${m.to}${m.n > 1 ? ` (${m.n})` : ""}`).join(", ");
+      const parts = [pv.edits ? `${plural(pv.edits, "song")} would move: ${moves}${pv.edits > pv.top.reduce((a, m) => a + m.n, 0) ? ", …" : ""}.` : "Your changes move no songs."];
+      if (pv.refile > pv.edits) parts.push(`${plural(pv.refile - pv.edits, "more song")} filed under older rules would be updated too.`);
+      if (pv.untagged) parts.push(`${plural(pv.untagged, "song")} have no saved Last.fm tags yet, so they're looked up again (slower).`);
+      parts.push("Genres you set by hand stay.");
+      refileDesc.textContent = parts.join(" ");
+    }, e => { refileDesc.textContent = `Couldn't count the songs (${errText(e)}). Saving still works.`; });
+    const save = btn => {
+      if (!IN_APP) { close(); gEdit.before = null; route(); toast(refile ? `Saved. Re-filing ${plural(n, "song")}…` : "Saved. New downloads use these genres."); return; }
+      if (busy) return;
+      busy = true; btn.disabled = true; btn.textContent = "Saving…";
+      apiReady.then(() => window.pywebview.api.save_genres(rulesNow(), refile)).then(saved => {
+        close(); L.genre_rules = saved; L.genres = saved.list; useSavedRules(); route();
+        if (refile) { toast("Saved. Re-filing your library…"); watchRefile(); } else toast("Saved. New downloads use these genres.");
+      }, e => { busy = false; btn.disabled = false; btn.textContent = "Save"; toast(`Couldn't save (${errText(e)})`); });
+    };
+    const opt = (val, title, desc) => h("label", { class: "choice" }, h("input", { type: "radio", name: "applyTo", checked: val === refile, onchange: () => refile = val }),
+      h("span", {}, h("b", {}, title), h("small", {}, desc)));
+    const back = h("div", { class: "sheet-back", onclick: e => { if (e.target === back) close(); } },
+      h("div", { class: "sheet wide", role: "dialog", "aria-modal": "true", "aria-label": "Save genre changes" },
+        h("div", {}, h("h3", {}, "Save genre changes"), h("p", { class: "note", style: "margin:4px 0 14px" }, changes.join(" · ")),
+          h("div", { class: "choices" },
+            opt(false, "New downloads only", "Songs you already have keep their genre."),
+            opt(true, "Also re-file my library", refileDesc)),
+          h("div", { class: "row", style: "justify-content:flex-end" },
+            h("button", { class: "btn", type: "button", onclick: close }, "Back"),
+            h("button", { class: "btn primary", type: "button", onclick: e => save(e.currentTarget) }, "Save")))));
+    document.body.append(back);
+  }
+  // Last.fm albums for a genre, fetched once per genre when it's opened; redraws only if still selected.
+  const albumsAsked = new Map();
+  function popularPending(sel, node, redraw) {
+    if (!IN_APP) return h("p", { class: "note" }, "In the app these load from Last.fm when you open the genre. This mockup has them for the genres your library uses most.");
+    const failed = albumsAsked.get(sel);
+    if (failed instanceof Error) return h("p", { class: "note" }, `Couldn't reach Last.fm (${errText(failed)}). `,
+      h("button", { class: "btn small", type: "button", onclick: () => { albumsAsked.delete(sel); redraw(); } }, "Try Again"));
+    if (!albumsAsked.has(sel)) {
+      albumsAsked.set(sel, true);
+      apiReady.then(() => window.pywebview.api.genre_albums(sel))
+        .then(list => { node.albums = list || []; })
+        .catch(err => { albumsAsked.set(sel, err instanceof Error ? err : new Error(errText(err))); })
+        .finally(redraw);
+    }
+    return h("p", { class: "note" }, "Asking Last.fm…");
+  }
+  function popTile(a) {
+    const own = ownedAlbum(a.title, a.artist);
+    const img = a.cover ? h("img", { class: "art", src: a.cover, alt: "", loading: "lazy" }) : placeholder(a.title);
+    return h("button", { class: "pop", type: "button", "aria-label": `${a.title} by ${a.artist}`, onclick: () => albumSheet(a, own) },
+      img, own ? h("span", { class: "chip ok badge" }, icon("check"), "In library") : null,
+      own ? null : h("span", { class: "get", "aria-hidden": "true" }, icon("get")),
+      h("span", { class: "t1" }, a.title), h("span", { class: "t2" }, a.artist));
+  }
+  function albumSheet(a, own) {
+    const close = () => back.remove();
+    const back = h("div", { class: "sheet-back", onclick: e => { if (e.target === back) close(); } },
+      h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": a.title },
+        a.cover ? h("img", { class: "art", src: a.cover, alt: "" }) : placeholder(a.title),
+        h("div", {},
+          h("p", { class: "meta note" }, "Album"),
+          h("h3", {}, a.title), h("p", { class: "by" }, a.artist),
+          h("p", { class: "note", style: "margin-top:8px" }, own ? `You have ${plural(own.songs.length, "song")} from this album.` :
+            "phoenixmp3 looks it up on MusicBrainz, lets you pick the edition, then finds each track on YouTube Music."),
+          h("div", { class: "row" },
+            own ? h("button", { class: "btn", type: "button", onclick: () => { close(); go("album-" + own.id); } }, "Show in Library") : null,
+            h("button", { class: "btn primary", type: "button", onclick: () => {
+              close();
+              if (isDemo(a.title)) { getState.mode = "search"; getState.q = a.title; getState.tab = "albums"; getState.pick = 0; getState.edition = DEMO.editions.findIndex(e => e.default); getState.chosen = null; route(); }
+              else startRun([{ t: "Whole album", a: a.artist, al: a.title, cover: a.cover }], `${a.title} · ${a.artist}`);
+            } }, icon("get"), own ? "Get the Rest" : "Get Album"),
+            h("button", { class: "btn ghost", type: "button", onclick: close }, "Close")))));
+    document.body.append(back);
+    const onKey = e => { if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); } };
+    document.addEventListener("keydown", onKey);
+    back.querySelector(".btn.primary").focus();
+  }
+  const isLink = q => /^(https?:\/\/)?((www|m|music)\.)?(youtube\.com|youtu\.be)\//i.test(q.trim());
+  const isDemo = q => norm(q).includes("tickets to my downfall") || norm(q).includes("tickets to my");
+  function viewGet() {
+    if (getState.mode === "browse") {   // same layout as the Genres tab: chart left, music panel right
+      return h("div", {}, head("Get Music", "Browse by genre: what's popular, and what you already have", modeSwitch()),
+        genreExplorer("get", getState));
+    }
+    const wrap = h("div", {});
+    const input = h("input", { id: "getQ", type: "search", value: getState.q, autocomplete: "off",
+      placeholder: "Search for an album, song or artist — or paste a YouTube link", "aria-label": "Search or paste a YouTube link" });
+    const out = h("div", {});
+    const tabs = h("div", { class: "seg", role: "group", "aria-label": "Result type" },
+      ["albums", "songs", "artists"].map(t => h("button", { type: "button", "aria-pressed": String(getState.tab === t),
+        onclick: () => { getState.tab = t; getState.pick = null; draw(); } }, t[0].toUpperCase() + t.slice(1))));
+    function draw() {
+      [...tabs.children].forEach(b => b.setAttribute("aria-pressed", String(b.textContent.toLowerCase() === getState.tab)));
+      const q = getState.q.trim();
+      if (!q) { out.replaceChildren(); tabs.hidden = true; return; }
+      if (isLink(q)) { tabs.hidden = true; out.replaceChildren(linkCard(q)); return; }
+      tabs.hidden = false;
+      if (getState.pick != null && getState.tab === "albums" && isDemo(q)) { out.replaceChildren(releaseView()); return; }
+      out.replaceChildren(resultsList(q));
+    }
+    input.addEventListener("input", () => { getState.q = input.value; getState.pick = null; draw(); });
+    input.addEventListener("paste", () => setTimeout(() => { getState.q = input.value; draw(); }, 0));
+    wrap.append(h("div", { class: "hero-search" },
+      h("div", { class: "head", style: "margin:0;justify-content:center;text-align:center" }, h("div", {}, h("h1", {}, "Get Music"),
+        h("p", { class: "sub" }, "Type what you want to hear. phoenixmp3 finds the official album or song, matches it on YouTube Music and tags it properly."))),
+      modeSwitch(),
+      h("div", { class: "big-input" }, icon("search"), input),
+      h("div", { class: "tries" }, ["tickets to my downfall", "fade into you", "https://music.youtube.com/playlist?list=…"].map(t =>
+        h("button", { type: "button", onclick: () => { getState.q = t; getState.pick = null; input.value = t; draw(); } }, t.startsWith("http") ? "Paste a link" : t))),
+      h("div", { style: "display:flex;justify-content:center" }, tabs)), out);
+    draw();
+    setTimeout(() => input.focus(), 0);
+    return wrap;
+  }
+  function libraryMatches(q) {
+    const f = norm(q); if (!f) return [];
+    return L.albums.filter(al => norm(`${al.name} ${al.artist}`).includes(f) || f.includes(norm(al.name)) && norm(al.name).length > 5).slice(0, 4);
+  }
+  function resultsList(q) {
+    const box = h("div", { class: "results" });
+    const lib = libraryMatches(q);
+    const libAlbum = name => L.albums.find(al => norm(al.name) === norm(name));
+    if (getState.tab === "albums") {
+      if (isDemo(q)) {
+        DEMO.albums.forEach((r, i) => {
+          const mine = libAlbum(r.title);
+          box.append(h("button", { class: "res", type: "button", onclick: () => { getState.pick = i; getState.edition = DEMO.editions.findIndex(e => e.default); getState.chosen = null; route(); } },
+            mine && i === 0 ? cover(mine) : placeholder(r.title),
+            h("div", {}, h("b", {}, r.title), h("small", {}, `${r.type || "Album"} · ${r.artist} · ${r.year || "?"}`)),
+            i === 0 && mine ? h("span", { class: "chip ok" }, icon("check"), "Some in library") : h("span", { class: "chip mute" }, `Match ${r.score}%`)));
+        });
+      } else {
+        box.append(h("p", { class: "note", style: "padding:6px 10px" }, "In the app this searches MusicBrainz live. This mockup has one sample search: try “tickets to my downfall”."));
+      }
+    } else if (getState.tab === "songs") {
+      const sample = [
+        { t: "Fade Into You", a: "Mazzy Star", al: "So Tonight That I Might See", y: 1993, len: 295 },
+        { t: "Fade Into You (live)", a: "Mazzy Star", al: "KCRW session", y: 1993, len: 196, v: true },
+      ];
+      if (norm(q).includes("fade")) sample.forEach(r => box.append(h("button", { class: "res", type: "button", onclick: () => startRun([{ t: r.t, a: r.a, al: r.al }], "Fade Into You") },
+        placeholder(r.al), h("div", {}, h("b", {}, r.t), h("small", {}, `${r.a} · ${r.al} · ${r.y} · ${mins(r.len)}`)),
+        r.v ? h("span", { class: "chip warn" }, "Live version") : h("span", { class: "chip acc" }, icon("get"), "Get"))));
+      else box.append(h("p", { class: "note", style: "padding:6px 10px" }, "Song search runs live in the app. Sample: try “fade into you”."));
+    } else {
+      const ar = artists.filter(a => norm(a.name).includes(norm(q))).slice(0, 6);
+      ar.forEach(a => box.append(h("button", { class: "res", type: "button", onclick: () => go("artist-" + a.id) },
+        a.albums[0].cover ? h("img", { class: "art", src: a.albums[0].cover, alt: "", style: "border-radius:50%" }) : placeholder(a.name),
+        h("div", {}, h("b", {}, a.name), h("small", {}, `In your library · ${plural(a.songs, "song")}`)), h("span", { class: "chip ok" }, icon("check"), "In library"))));
+      if (!ar.length) box.append(h("p", { class: "note", style: "padding:6px 10px" }, "Artist search with their full discography runs live in the app."));
+    }
+    if (lib.length && getState.tab === "albums") {
+      box.append(h("h2", { class: "section-title" }, "Already in your library"));
+      lib.forEach(al => box.append(h("button", { class: "res", type: "button", onclick: () => go("album-" + al.id) }, cover(al),
+        h("div", {}, h("b", {}, al.name), h("small", {}, `${al.artist} · ${plural(al.songs.length, "song")}`)), h("span", { class: "chip ok" }, icon("check"), "In library"))));
+    }
+    return box;
+  }
+  function releaseView() {
+    const rel = DEMO.release, mine = L.albums.find(al => norm(al.name) === norm(rel.title));
+    const have = new Set(L.songs.filter(s => norm(s.a).includes("mgk") || norm(s.a).includes("machine gun kelly")).map(s => norm(s.t)));
+    const ed = DEMO.editions[getState.edition] || DEMO.editions[0];
+    const tracks = DEMO.tracks.slice(0, Math.min(ed.tracks, DEMO.tracks.length));
+    const extra = Math.max(0, ed.tracks - DEMO.tracks.length);
+    const status = t => have.has(norm(t.title)) ? "have" : (t.n === 9 ? "unsure" : "found");
+    if (!getState.chosen) getState.chosen = new Set(tracks.filter(t => status(t) === "found").map(t => t.n));
+    const box = h("div", { class: "release" });
+    const count = h("b", {});
+    const dlBtn = h("button", { class: "btn primary", type: "button" }, icon("get"), "Download");
+    const refresh = () => { const n = getState.chosen.size; count.textContent = n ? plural(n, "song") + " to download" : "Nothing selected"; dlBtn.disabled = !n; };
+    dlBtn.addEventListener("click", () => {
+      const pick = tracks.filter(t => getState.chosen.has(t.n)).map(t => ({ t: t.title, a: "mgk", al: rel.title }));
+      startRun(pick, rel.title);
+    });
+    box.append(h("button", { class: "btn ghost", type: "button", onclick: () => { getState.pick = null; route(); } }, "‹ All results"));
+    box.append(h("div", { class: "album-hero", style: "margin-top:12px" }, mine ? cover(mine) : placeholder(rel.title),
+      h("div", {},
+        h("p", { class: "meta" }, `${rel.type} · ${rel.year} · MusicBrainz`),
+        h("h1", {}, rel.title), h("span", { class: "by" }, rel.artist),
+        h("p", { class: "note" }, "Edition"),
+        h("div", { class: "editions", role: "group", "aria-label": "Edition" }, DEMO.editions.map((e, i) => h("button", {
+          class: "ed", type: "button", "aria-pressed": String(i === getState.edition),
+          onclick: () => { getState.edition = i; getState.chosen = null; route(); } },
+          e.default ? "Standard" : (e.tracks > 20 ? "Deluxe" : "Expanded"), h("small", {}, `${e.tracks} tracks · ${e.formats.join(", ")}`)))))));
+    box.append(h("div", { class: "row", style: "margin-bottom:10px" },
+      h("span", { class: "chip ok" }, icon("check"), `${tracks.filter(t => status(t) === "have").length} in your library`),
+      h("span", { class: "chip acc" }, icon("play"), `${tracks.filter(t => status(t) === "found").length} found on YouTube Music`),
+      h("span", { class: "chip warn" }, icon("q"), "1 to check"),
+      extra ? h("span", { class: "chip mute" }, `${extra} more tracks load in the app`) : null));
+    box.append(h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, h("th", { style: "width:34px" }, ""), h("th", { class: "num" }, "#"), h("th", {}, "Title"), h("th", {}, "Status"), h("th", { class: "time" }, "Time"))),
+      h("tbody", {}, tracks.map(t => {
+        const st = status(t);
+        const cb = h("input", { type: "checkbox", class: "chk", "aria-label": "Download " + t.title, checked: getState.chosen.has(t.n), disabled: st === "have" });
+        cb.addEventListener("change", () => { cb.checked ? getState.chosen.add(t.n) : getState.chosen.delete(t.n); refresh(); });
+        return h("tr", { class: "r" }, h("td", {}, cb), h("td", { class: "num" }, t.n), h("td", {}, t.title),
+          h("td", {}, st === "have" ? h("span", { class: "chip ok" }, icon("check"), "In library")
+            : st === "unsure" ? h("span", { class: "chip warn", title: "MusicBrainz has no length for it, so only the title and artist matched" }, icon("q"), "Check match")
+            : h("span", { class: "chip acc" }, icon("play"), "Album playlist")),
+          h("td", { class: "time" }, t.length ? mins(t.length) : "–"));
+      }))));
+    box.append(h("div", { class: "sticky-foot" }, h("div", {}, count, h("p", { class: "note" }, "Tagged with this exact album, track numbers and year. Songs you already have are skipped.")), dlBtn));
+    refresh();
+    return box;
+  }
+  function linkCard(q) {
+    const isList = /list=/.test(q);
+    return h("div", { class: "linkcard" }, h("div", { class: "yt" }, icon(isList ? "list" : "play")),
+      h("div", {}, h("b", {}, isList ? "YouTube playlist" : "YouTube video"),
+        h("p", { class: "note" }, isList ? "Preview shows every song in the playlist and which ones you already have." : "One song. It's tagged from MusicBrainz after it downloads."),
+        h("div", { class: "row", style: "margin-top:10px" },
+          h("button", { class: "btn", type: "button", onclick: () => toast("Preview lists the songs before anything downloads") }, "Preview"),
+          h("button", { class: "btn primary", type: "button", onclick: () => startRun([{ t: "Holocene", a: "Bon Iver", al: "Bon Iver, Bon Iver" }, { t: "White Winter Hymnal", a: "Fleet Foxes", al: "Fleet Foxes" }, { t: "Stick Season", a: "Noah Kahan", al: "Stick Season" }], "YouTube playlist") }, icon("get"), "Download"),
+          h("label", { class: "row note", style: "gap:6px" }, h("input", { type: "checkbox", class: "chk", id: "savePl" }), "Save to My Playlists"))));
+  }
+
+  // ---------- activity (simulated run) ----------
+  const STEPS = [
+    { key: "dl", name: "Download", verb: "Downloading" },
+    { key: "clean", name: "Clean up", verb: "Cleaning titles and art" },
+    { key: "tag", name: "Tag", verb: "Matching on MusicBrainz" },
+    { key: "albums", name: "Albums", verb: "Albums and years" },
+    { key: "genres", name: "Genres", verb: "Genres from Last.fm" },
+    { key: "lists", name: "Playlists", verb: "Writing playlist files" },
+  ];
+  let run = null;
+  function startRun(songs, label) {
+    if (run && !run.done) { toast("A download is already running"); go("activity"); return; }
+    run = { label, songs: songs.map(s => ({ ...s, stage: -1, genre: null })), step: 0, tick: 0, done: false, log: [`Started: ${label} (${plural(songs.length, "song")})`] };
+    $("actDot").hidden = false;
+    go("activity");
+    const GEN = ["Rock", "Folk", "Rock", "Folk", "Rock"];
+    const timer = setInterval(() => {
+      const r = run; r.tick++;
+      const stepSongs = r.songs;
+      if (r.step === 0) {   // downloads one by one
+        const next = stepSongs.find(s => s.stage < 0);
+        if (next) { next.stage = 0; r.log.push(`[download] ${next.a} - ${next.t}`); }
+        else r.step = 1;
+      } else if (r.step < STEPS.length) {
+        stepSongs.forEach((s, i) => { s.stage = r.step; if (r.step === 4) s.genre = GEN[i % GEN.length]; });
+        r.log.push(r.step === 4 ? stepSongs.map(s => `  genre: ${s.a} - ${s.t}: ${s.genre}`).join("\n") : `[${STEPS[r.step].key}] ${STEPS[r.step].verb} - ${plural(stepSongs.length, "song")}`);
+        r.step++;
+      }
+      if (r.step >= STEPS.length) { r.done = true; r.log.push("Finished"); clearInterval(timer); toast(`Finished: ${plural(stepSongs.length, "new song")}`); }
+      updateLcd();
+      if ((location.hash || "").startsWith("#activity")) route();
+    }, 900);
+    updateLcd();
+  }
+  function progress() {
+    if (!run) return 0;
+    const dl = run.songs.filter(s => s.stage >= 0).length / run.songs.length;
+    return run.step === 0 ? dl * 0.6 : Math.min(1, 0.6 + (run.step - 1) / (STEPS.length - 1) * 0.4);
+  }
+  function updateLcd() {
+    if (!run) return setIdle();
+    $("lcdBar").style.width = Math.round(progress() * 100) + "%";
+    if (run.done) { $("lcdTitle").textContent = `Finished · ${plural(run.songs.length, "new song")}`; $("lcdSub").textContent = run.label + " · click for details"; setTimeout(() => { if (run.done) $("lcdBar").style.width = "0"; }, 1500); return; }
+    const st = STEPS[Math.min(run.step, STEPS.length - 1)];
+    const cur = run.step === 0 ? run.songs.filter(s => s.stage >= 0).slice(-1)[0] : null;
+    $("lcdTitle").textContent = run.step === 0 ? `Downloading ${run.songs.filter(s => s.stage >= 0).length} of ${run.songs.length}` : st.verb;
+    $("lcdSub").textContent = cur ? `${cur.a} — ${cur.t}` : run.label;
+  }
+  function setIdle() {
+    if (!L) return;
+    $("lcdTitle").textContent = "Ready";
+    const last = lastRun();
+    $("lcdSub").textContent = `${plural(L.songs.length, "song")} · last download ${last ? fmtDate(L.songs[last[0]].add) : "never"}`;
+  }
+  function viewActivity() {
+    const frag = h("div", {});
+    if (!run) {
+      const last = lastRun() || [];
+      frag.append(head("Activity", "What phoenixmp3 is doing, step by step"));
+      frag.append(h("div", { class: "summary" }, h("div", {}, h("b", {}, `Last download finished · ${plural(last.length, "new song")}`),
+        h("p", { class: "note" }, `${last.length ? fmtDate(L.songs[last[0]].add) : ""} · ${summarizeGenres(last)}`)),
+        h("button", { class: "btn primary", type: "button", onclick: () => go("get") }, icon("get"), "Get Music")));
+      frag.append(h("div", { class: "runlist" }, last.slice(0, 20).map(i => { const s = L.songs[i], al = L.albums[s.alb];
+        return h("div", { class: "runrow" }, cover(al, ""), h("div", {}, h("b", {}, s.t), h("small", {}, `${s.a} · ${s.al || al.name}`)),
+          s.g ? h("span", { class: "chip ok" }, icon("check"), s.g) : h("span", { class: "chip warn" }, "No genre found")); })));
+      return frag;
+    }
+    frag.append(head(run.done ? "Finished" : "Working…", run.label,
+      run.done ? h("button", { class: "btn primary", type: "button", onclick: () => go("genres") }, icon("tag"), "Review Genres")
+        : h("button", { class: "btn", type: "button", onclick: () => toast("Stop ends the run; anything downloaded gets tagged next time") }, icon("x"), "Stop")));
+    if (run.done) frag.append(h("div", { class: "summary" }, h("div", {}, h("b", {}, `${plural(run.songs.length, "new song")}, no problems`),
+      h("p", { class: "note" }, "Tagged from MusicBrainz, albums and years filled in, genres from Last.fm."))));
+    frag.append(h("div", { class: "steps" }, STEPS.map((st, i) => {
+      const state = run.done || i < run.step ? "done" : i === run.step ? "active" : "";
+      const pct = i === 0 ? run.songs.filter(s => s.stage >= 0).length / run.songs.length * 100 : (state === "done" ? 100 : 0);
+      return h("div", { class: "step " + state }, h("b", {}, st.name), h("small", {}, state === "done" ? "Done" : state === "active" ? st.verb : "Waiting"),
+        h("div", { class: "pb" }, h("i", { style: `width:${pct}%` })));
+    })));
+    frag.append(h("div", { class: "runlist" }, run.songs.map(s => h("div", { class: "runrow" }, s.cover ? h("img", { src: s.cover, alt: "" }) : placeholder(s.al), h("div", {}, h("b", {}, s.t), h("small", {}, `${s.a} · ${s.al}`)),
+      s.genre ? h("span", { class: "chip ok" }, icon("check"), s.genre) : s.stage >= 0 ? h("span", { class: "chip acc" }, STEPS[Math.min(s.stage, 5)].name) : h("span", { class: "chip mute" }, "Queued")))));
+    const logBox = h("pre", { class: "log", hidden: true }, run.log.join("\n"));
+    frag.append(h("button", { class: "btn ghost", type: "button", style: "margin-top:10px", onclick: () => { logBox.hidden = !logBox.hidden; } }, "Show full log"), logBox);
+    return frag;
+  }
+
+  // ---------- my playlists ----------
+  function viewPlaylists() {
+    const frag = h("div", {});
+    frag.append(head("My Playlists", "YouTube playlists phoenixmp3 keeps in sync",
+      h("button", { class: "btn", type: "button", onclick: () => toast("Paste a YouTube or YouTube Music playlist link to keep it in sync") }, icon("plus"), "Add Playlist"),
+      h("button", { class: "btn primary", type: "button", onclick: () => startRun([{ t: "Holocene", a: "Bon Iver", al: "Bon Iver, Bon Iver" }, { t: "Numb", a: "Linkin Park", al: "Meteora" }], "Update My Playlists") }, icon("refresh"), "Update All")));
+    const covers = L.albums.filter(a => a.cover);
+    frag.append(h("div", { class: "plist" }, L.playlists.map((p, i) => h("div", { class: "pcard" },
+      h("div", { class: "pmos" }, [0, 1, 2, 3].map(k => h("img", { src: covers[(i * 7 + k * 13) % covers.length].cover, alt: "" }))),
+      h("div", {}, h("b", {}, p.name), h("p", { class: "note" }, i % 3 === 1 ? "2 new songs to get" : "Up to date"),
+        h("div", { class: "row" },
+          i % 3 === 1 ? h("span", { class: "chip acc" }, "2 new") : h("span", { class: "chip ok" }, icon("check"), "Synced"),
+          h("button", { class: "btn ghost", type: "button", onclick: () => startRun([{ t: "Holocene", a: "Bon Iver", al: "Bon Iver, Bon Iver" }], "Update " + p.name) }, "Update")))))));
+    frag.append(h("p", { class: "note", style: "margin-top:16px" }, "Songs YouTube no longer plays are swapped for another upload of the same song when one exists (same artist, same version, within 10 seconds)."));
+    return frag;
+  }
+
+  // ---------- preferences ----------
+  const prefsState = { format: "aac", layout: "flat", pause: 10, square_art: true, small_art: false, playlist_files: false, replaygain: false, source: "track", family: "history" };
+  function viewPrefs() {
+    const s = prefsState;
+    const seg = (key, opts) => h("div", { class: "seg", role: "group" }, Object.entries(opts).map(([v, t]) => h("button", { type: "button", "aria-pressed": String(s[key] === v),
+      onclick: e => { s[key] = v; [...e.target.parentNode.children].forEach(b => b.setAttribute("aria-pressed", String(b === e.target))); saved(); } }, t)));
+    const sw = (key, id) => h("label", { class: "switch" }, h("input", { type: "checkbox", id, checked: s[key], role: "switch", onchange: e => { s[key] = e.target.checked; saved(); } }), h("span", {}));
+    const pref = (title, desc, control) => h("div", { class: "pref" }, h("div", {}, h("b", {}, title), h("small", {}, desc)), control);
+    const example = h("code", {}, "");
+    const showEx = () => example.textContent = s.layout === "flat" ? "mgk - drunk face.m4a" : "mgk\\Tickets To My Downfall\\drunk face.m4a";
+    const layoutSeg = seg("layout", { flat: "One folder", folders: "Artist / Album" });
+    layoutSeg.addEventListener("click", showEx); showEx();
+    const pauseOut = h("span", { class: "note", style: "width:40px" }, s.pause + " s");
+    const confirmRow = h("div", { class: "pref", hidden: true },
+      h("div", {}, h("b", {}, "Re-file every song?"), h("small", {}, "Songs whose genre you set by hand keep it. Nothing downloads; it uses saved Last.fm tags.")),
+      h("div", { class: "row" }, h("button", { class: "btn", type: "button", onclick: () => confirmRow.hidden = true }, "Cancel"),
+        h("button", { class: "btn primary", type: "button", onclick: () => { confirmRow.hidden = true; toast("Would re-file genres for your whole library"); } }, "Re-file")));
+    function saved() { toast("Saved"); }
+    return h("div", {}, head("Preferences", "Changes apply to your next download"),
+      h("div", { class: "prefs" },
+        h("div", { class: "group" }, h("h3", {}, "Downloads"), h("div", { class: "card" },
+          pref("Format", "AAC (.m4a) sounds better at the same size. MP3 plays everywhere.", seg("format", { aac: "AAC", mp3: "MP3" })),
+          pref("Pause between songs", "Spacing downloads out keeps YouTube from blocking you.", h("div", { class: "range" },
+            h("input", { type: "range", id: "pause", min: 0, max: 30, value: s.pause, "aria-label": "Seconds between songs", oninput: e => { s.pause = +e.target.value; pauseOut.textContent = s.pause + " s"; }, onchange: saved }), pauseOut)))),
+        h("div", { class: "group" }, h("h3", {}, "Library"), h("div", { class: "card" },
+          pref("Music folder", "Where finished songs go.", h("div", { class: "row" }, h("code", {}, L.folder), h("button", { class: "btn", type: "button", onclick: () => toast("Would open a folder picker") }, "Change…"))),
+          h("div", { class: "pref" }, h("div", {}, h("b", {}, "Folder layout"), h("small", {}, "Example: ", example)), layoutSeg),
+          pref("Square cover art", "Crops YouTube's wide thumbnails to square.", sw("square_art", "sqArt")),
+          pref("Small cover art", "Smaller files for old iPods.", sw("small_art", "smArt")),
+          pref("Even out loudness", "ReplayGain, so songs play at the same volume.", sw("replaygain", "rg")),
+          pref("Playlist files", "Writes an .m3u8 for each of My Playlists.", sw("playlist_files", "plf")))),
+        h("div", { class: "group" }, h("h3", {}, "Genres"), h("div", { class: "card" },
+          pref("Look up tags by", "Album keeps every song on an album together.", seg("source", { track: "Song", album: "Album", artist: "Artist" })),
+          pref("Group sub-genres by", "Music history puts dream pop under Rock; Sounds like puts it under Pop.", seg("family", { history: "Music history", sound: "Sounds like" })),
+          pref("Genre list", "Switch genres on or off and drag styles around, right in the Genres tab.", h("button", { class: "btn", type: "button", onclick: () => go("genres") }, icon("chart"), "Open Genres")),
+          pref("Re-file my library", "Apply these genre settings to songs you already have.", h("button", { class: "btn", type: "button", onclick: () => confirmRow.hidden = false }, icon("refresh"), "Re-file…")),
+          confirmRow)),
+        h("div", { class: "group" }, h("h3", {}, "Appearance"), h("div", { class: "card" },
+          pref("Theme", "Dark unless you pick another. System follows Windows.", h("div", { class: "seg", role: "group" }, ["dark", "light", "system"].map(t => h("button", { type: "button",
+            "aria-pressed": String(theme === t),
+            onclick: e => { theme = t; applyTheme(t); try { localStorage.setItem("phx-theme", t); } catch (_) {}
+              [...e.target.parentNode.children].forEach(b => b.setAttribute("aria-pressed", String(b === e.target))); } }, t[0].toUpperCase() + t.slice(1)))))))));
+  }
+
+  // ---------- wiring ----------
+  $("lcd").addEventListener("click", () => go("activity"));
+  $("menuBtn").addEventListener("click", () => $("app").classList.toggle("open"));
+  view.addEventListener("click", e => { if (e.target === view) $("app").classList.remove("open"); });
+  $("sideSearch").addEventListener("submit", e => { e.preventDefault(); getState.q = $("sideQ").value; getState.pick = null; go("get"); });
+  window.addEventListener("hashchange", route);
+  route();
+  Promise.all([load("data"), fetchJSON("demo.json")]).then(([d, demo]) => {
+    DEMO = demo; L = d;
+    Object.assign(prefsState, Object.fromEntries(Object.entries(d.settings || {}).filter(([k]) => k in prefsState)));
+    useSavedRules();
+    derive(); route();
+  }).catch(err => { view.replaceChildren(h("div", { class: "empty" }, `Couldn't load the library (${errText(err)}).`)); });
+})();
+</script>
