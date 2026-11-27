@@ -52,7 +52,7 @@ def current_rules() -> dict:
     """The genre settings in use: list, source, family and moves (a parent of None means top level)."""
     lg = {**_lastgenre(PIPELINE / "config.yaml"), **_lastgenre(PIPELINE / fg.MY_RULES)}
     moves = {str(g).lower(): (None if str(p).lower() == "top" else str(p).lower()) for g, p in (lg.get("moves") or {}).items()}
-    return {"list": sorted(fg.allowed()), "source": lg.get("source", "track"), "family": lg.get("family", "history"),
+    return {"list": sorted(fg.allowed()), "source": lg.get("source", "album"), "family": lg.get("family", "sound"),
             "moves": moves}
 
 

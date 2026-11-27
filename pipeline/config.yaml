@@ -42,7 +42,9 @@ match:
 # when downloading, so it never counts as one.
 lastgenre:
   auto: no
-  source: track
+  # Whose Last.fm tags decide: album (the album's, then the artist's, so songs on
+  # one album stay together) or artist. "track" (the song's own first) still works.
+  source: album
   count: 1
   canonical: yes
   whitelist: genres.txt
@@ -50,7 +52,7 @@ lastgenre:
   title_case: yes
   # How sub-genres are grouped: history (where a style came from, beets' tree
   # as is) or sound (what its name says: dream pop under pop, not rock).
-  family: history
+  family: sound
   # Genres moved under a different parent, made with the Genre Picker, e.g.
   #   moves:
   #     singer-songwriter: folk

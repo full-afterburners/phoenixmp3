@@ -173,7 +173,7 @@ def make_plugin(rules: Path = HERE):
                  for genre, pats in (lg["fallbacks"].get() or {}).items() for p in pats]
     from beetsplug.lastgenre import LastGenrePlugin
     plugin = LastGenrePlugin()
-    family = lg["family"].as_choice(["history", "sound"]) if lg["family"].exists() else "history"
+    family = lg["family"].as_choice(["history", "sound"]) if lg["family"].exists() else "sound"
     moves = (lg["moves"].get(dict) or {}) if lg["moves"].exists() else {}
     use_chains(regrouped_chains(plugin.c14n_branches, family, moves))
     tree_only = plugin._resolve_genres

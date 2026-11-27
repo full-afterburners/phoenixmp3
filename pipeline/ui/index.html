@@ -951,15 +951,17 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       const canEdit = ctx === "library";
       if (canEdit) baseline();
       if (st.sel && !G.nodes[st.sel]) st.sel = null;
-      const grouping = h("div", { class: "seg", role: "group", "aria-label": "Group sub-genres by" },
-        [["history", "Music history"], ["sound", "Sounds like"]].map(([v, t]) => h("button", { type: "button", "aria-pressed": String(prefsState.family === v),
-          onclick: () => { prefsState.family = v; chartView.open.clear(); chartView.sx = null; render(); } }, t)));
-      // where each song's Last.fm tags come from: its own, its album's, or its artist's
-      const lookup = h("div", { class: "row", style: "gap:6px" }, h("span", { class: "note" }, "Genre from"),
-        h("div", { class: "seg lookup-seg", role: "group", "aria-label": "Take each song's genre from" },
-          [["track", "Song"], ["album", "Album"], ["artist", "Artist"]].map(([v, t]) => h("button", { type: "button", "aria-pressed": String(prefsState.source === v),
-            title: { track: "The song's own tags, then its album's, then its artist's", album: "The album's tags, then the artist's: songs on one album stay together", artist: "The artist's tags: everything by one artist gets the same genre" }[v],
-            onclick: () => { prefsState.source = v; render(); } }, t))));
+      const labelled = (text, seg) => h("div", { class: "row", style: "gap:6px" }, h("span", { class: "note" }, text), seg);
+      const grouping = labelled("Group genre children by:", h("div", { class: "seg", role: "group", "aria-label": "Group genre children by" },
+        [["sound", "Sound alike"], ["history", "Music history"]].map(([v, t]) => h("button", { type: "button", "aria-pressed": String(prefsState.family === v),
+          title: { sound: "By what the name says: dream pop under pop, not rock", history: "By where a style came from (beets' genre tree as it is)" }[v],
+          onclick: () => { prefsState.family = v; chartView.open.clear(); chartView.sx = null; render(); } }, t))));
+      // where each song's Last.fm tags come from: its album's or its artist's ("track", the song's own
+      // first, still works when saved by hand in my-genres.yaml, but isn't offered here)
+      const lookup = labelled("Determine genre from:", h("div", { class: "seg lookup-seg", role: "group", "aria-label": "Determine genre from" },
+        [["album", "Album"], ["artist", "Artist"]].map(([v, t]) => h("button", { type: "button", "aria-pressed": String(prefsState.source === v),
+          title: { album: "The album's tags, then the artist's: songs on one album stay together", artist: "The artist's tags: everything by one artist gets the same genre" }[v],
+          onclick: () => { prefsState.source = v; render(); } }, t))));
       const top = h("div", { class: "gdetail-head" },
         h("p", { class: "note" }, ctx === "get" ? "Click a genre to see what's popular in it" : "Click a genre to see your music in it. Drag a box onto another to move it."),
         h("div", { class: "row" }, grouping, canEdit ? lookup : null));
@@ -1035,6 +1037,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   }
 
   // ----- the org chart -----
+  const ZOOM_BASE = 0.9;   // the chart's 100%: what used to be 90%, so more of the tree fits at first
   const chartView = { zoom: 1, sx: null, sy: null, open: new Set(), hidden: new Set() };
   // dragging and panning use window listeners (like the genre picker), set up once
   const cdrag = { src: null, x: 0, y: 0, on: false, ghost: null, target: null, onMove: null, done: false };
@@ -1153,7 +1156,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const root = o.discover
       ? h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "All music"), h("span", { class: "ct" }, plural(tops.length, "genre")))
       : h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "Your library"), h("span", { class: "ct" }, plural(L.songs.length, "song")));
-    const org = h("ul", { class: "org", style: `--zoom:${chartView.zoom}` }, h("li", {}, root, topUl));
+    const org = h("ul", { class: "org", style: `--zoom:${chartView.zoom * ZOOM_BASE}` }, h("li", {}, root, topUl));
     const chart = h("div", { class: "ochart" + (o.canEdit ? " can-edit" : "") }, org);
     chart.addEventListener("pointerdown", e => {   // drag empty space to pan
       if (e.button !== 0 || e.target.closest("button")) return;
@@ -1166,13 +1169,13 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       else chart.scrollLeft = (chart.scrollWidth - chart.clientWidth) / 2;   // first look: centred under "Your library"
     });
     const zv = h("output", {}, Math.round(chartView.zoom * 100) + "%");
-    const setZoom = z => { chartView.zoom = Math.min(1.6, Math.max(0.35, Math.round(z * 100) / 100)); org.style.setProperty("--zoom", chartView.zoom); zv.textContent = Math.round(chartView.zoom * 100) + "%"; };
+    const setZoom = z => { chartView.zoom = Math.min(1.6, Math.max(0.35, Math.round(z * 100) / 100)); org.style.setProperty("--zoom", chartView.zoom * ZOOM_BASE); zv.textContent = Math.round(chartView.zoom * 100) + "%"; };
     const tools = h("div", { class: "row ozoom" },
       h("span", { class: "note legend" }, o.discover ? "Click a genre to see its popular albums. Click again deeper to narrow it down." : "Green: on your list. Dashed: off, its songs go to the nearest green box above."
         + (o.canEdit ? " Drop a box on “Your library” to make it top-level." : "")),
       h("button", { class: "btn small", type: "button", "aria-label": "Zoom out", onclick: () => setZoom(chartView.zoom - 0.1) }, "−"), zv,
       h("button", { class: "btn small", type: "button", "aria-label": "Zoom in", onclick: () => setZoom(chartView.zoom + 0.1) }, "+"),
-      h("button", { class: "btn small", type: "button", onclick: () => { setZoom((chart.clientWidth - 32) / (org.getBoundingClientRect().width / chartView.zoom)); chart.scrollLeft = 0; } }, "Fit"));
+      h("button", { class: "btn small", type: "button", onclick: () => { setZoom((chart.clientWidth - 32) / (org.getBoundingClientRect().width / (chartView.zoom * ZOOM_BASE)) / ZOOM_BASE); chart.scrollLeft = 0; } }, "Fit"));
     return h("div", { class: "ochart-wrap" }, tools, chart);
   }
 
@@ -1999,7 +2002,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   }
 
   // ---------- preferences ----------
-  const prefsState = { format: "aac", layout: "flat", pause: 10, square_art: true, small_art: false, playlist_files: false, replaygain: false, source: "track", family: "history" };
+  const prefsState = { format: "aac", layout: "flat", pause: 10, square_art: true, small_art: false, playlist_files: false, replaygain: false, source: "album", family: "sound" };
   // In the app, settings are read from and saved to settings.json through Python (appsettings.py)
   function viewPrefsApp() {
     return later(apiReady.then(() => window.pywebview.api.get_settings()), prefsPage, "Loading your preferences…");
