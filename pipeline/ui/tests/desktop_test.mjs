@@ -167,6 +167,15 @@ try {
   await js(`document.querySelector('#view .avatar').click()`);
   check("a library artist page links to their profile", await waitFor(`!!document.getElementById('profileBtn') || !!document.querySelector('#view .head .btn')`, 5000),
     await js(`document.getElementById('profileBtn') ? 'has profile' : 'no MusicBrainz id for this artist'`));
+  // An album you have every track of shows no "Get the Rest" (needs one tagged by MusicBrainz in the library)
+  const whole = await js(`window.pywebview.api.load('data').then(d => d.albums.findIndex(a => a.total && a.songs.length >= a.total))`);
+  if (whole >= 0) {
+    await js(`location.hash = 'album-${whole}'`);
+    await waitFor(`!!document.querySelector('.album-hero')`, 5000);
+    await new Promise(r => setTimeout(r, 1500));
+    check("an album you have all of shows no Get the Rest", await js(`!document.getElementById('getRest') || document.getElementById('getRest').hidden`),
+      await js(`document.querySelector('.album-hero h1')?.textContent`));
+  } else console.log("SKIP  no fully owned MusicBrainz-tagged album in this library");
 
   // ---- saving genre changes. The count is the real one (fillgenres --preview changes nothing), but
   // save_genres and refile_status are swapped for fakes in the page: a real save would change your

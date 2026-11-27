@@ -733,6 +733,33 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     return h("div", {}, head("Albums", `${plural(L.albums.length, "album")}, singles included`, sel), grid);
   }
 
+  // "You have 5 of 14 songs · Get the Rest" on an album page, only when some are missing. The count
+  // comes from the library when MusicBrainz tagged the album (al.total), else Python looks the album
+  // up by name (cached a week): the box stays hidden until then, and for good when you have at least
+  // the standard edition's tracks. Unknown albums keep the plain "N songs from this album" box.
+  function getRest(al, have, sample) {
+    const tickets = sample && !IN_APP;   // the mockup's sample album only
+    const box = h("div", { class: "callout", id: "getRest", hidden: true });
+    const show = (tracks, rg) => {
+      if (tracks && have >= tracks) return;
+      box.replaceChildren(
+        h("span", {}, h("b", {}, `You have ${tracks ? `${have} of ${tracks} songs` : plural(have, "song")}`),
+          tickets ? " of 15 on the standard edition." : tracks ? " on the standard edition." : " from this album."),
+        h("button", { class: "btn primary", type: "button", onclick: () => {
+          if (IN_APP && rg) { go("mbalbum-" + rg); return; }   // the album's own page: tick what's missing
+          getState.q = `${al.name} ${al.artist}`; getState.pick = tickets ? 0 : null; go("get");
+        } }, icon("get"), "Get the Rest"));
+      box.hidden = false;
+    };
+    if (!IN_APP) { if (tickets || have > 1) show(null, null); return box; }   // the mockup: sample data
+    if (al.total) { show(al.total, al.rg); return box; }
+    if (have < 2 && !al.rg) return box;   // one song that isn't a single: not worth a lookup
+    const ask = al.lookup || (al.lookup = apiReady.then(() => window.pywebview.api.library_album(al.name, al.artist))
+      .catch(() => { al.lookup = null; return {}; }));   // offline: try again next time the page opens
+    ask.then(r => show(r.tracks, r.rg || al.rg));
+    return box;
+  }
+
   function viewAlbum(id) {
     const al = L.albums[+id];
     if (!al) return h("div", { class: "empty" }, "That album isn't in your library.");
@@ -751,9 +778,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
         h("div", { class: "row" },
           h("button", { class: "btn", type: "button", onclick: () => toast(`Would open ${L.folder}\\${songs[0].f}`) }, icon("folder"), "Show in Folder"),
           h("button", { class: "btn", type: "button", onclick: () => toast("Would re-pick this album's genre with your current genre settings") }, icon("refresh"), "Re-file Genre")),
-        !isSingle && (tickets || songs.length > 1) ? h("div", { class: "callout" },
-          h("span", {}, h("b", {}, `You have ${plural(songs.length, "song")}`), tickets ? " of 15 on the standard edition." : " from this album."),
-          h("button", { class: "btn primary", type: "button", onclick: () => { getState.q = `${al.name} ${al.artist}`; getState.pick = tickets ? 0 : null; go("get"); } }, icon("get"), "Get the Rest")) : null)));
+        isSingle ? null : getRest(al, songs.length, tickets))));
     frag.append(h("table", { class: "tbl" },
       h("thead", {}, h("tr", {}, h("th", { class: "num" }, "#"), h("th", {}, "Title"), h("th", {}, "File"), h("th", { class: "time" }, "Time"))),
       h("tbody", {}, songs.map((s, i) => h("tr", { class: "r" },

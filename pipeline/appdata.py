@@ -125,16 +125,23 @@ def _library() -> dict:
     if has_library():
         with open_db() as db:
             rows = db.execute("select id, title, artist, albumartist, album, year, genres, length, added, track, path, "
-                              "mb_artistid from items order by added, id").fetchall()
+                              "mb_artistid, disc, disctotal, tracktotal, mb_releasegroupid from items order by added, id").fetchall()
     songs, paths, groups = [], [], defaultdict(list)
-    for rid, title, artist, aa, album, year, genres, length, added, track, path, aid in rows:
+    discs = defaultdict(dict)        # album key -> {disc: its track count}, where MusicBrainz gave one
+    disc_count = defaultdict(int)    # album key -> how many discs the album has
+    for rid, title, artist, aa, album, year, genres, length, added, track, path, aid, disc, disctotal, tracktotal, rg in rows:
+        key = ((aa or artist or "").strip(), (album or title or "").strip())
+        if tracktotal:
+            discs[key][disc or 1] = max(tracktotal, discs[key].get(disc or 1, 0))
+            disc_count[key] = max(disc_count[key], disctotal or 1)
         p = Path(as_text(path))
         full = p if p.is_absolute() else out_dir / p
-        groups[((aa or artist or "").strip(), (album or title or "").strip())].append(len(songs))
+        groups[key].append(len(songs))
         songs.append({"id": rid, "t": title, "a": artist, "al": album or "", "y": year or None,
                       "g": as_text(genres).split("\x00")[0], "len": round(length or 0), "add": int(added or 0),
                       "n": track or 0, "ext": full.suffix.lstrip("."), "f": full.name,
-                      "aid": as_text(aid)})   # MusicBrainz artist id: opens the artist's profile
+                      "aid": as_text(aid),   # MusicBrainz artist id: opens the artist's profile
+                      "rg": as_text(rg)})    # MusicBrainz release group: "Get the Rest" opens the album's page
         paths.append(full)
     keys = list(groups)
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -147,7 +154,12 @@ def _library() -> dict:
             songs[i]["alb"] = len(albums)
         albums.append({"id": len(albums), "name": name, "artist": artist, "songs": idxs,
                        "year": min(years) if years else None, "genre": songs[idxs[0]]["g"],
-                       "added": max(songs[i]["add"] for i in idxs), "cover": cover})
+                       "added": max(songs[i]["add"] for i in idxs), "cover": cover,
+                       # tracks on the whole album, None when unknown: MusicBrainz never said, or you
+                       # have songs from only some of its discs (their counts don't cover the others)
+                       "total": sum(discs[(artist, name)].values())
+                       if discs[(artist, name)] and len(discs[(artist, name)]) >= disc_count[(artist, name)] else None,
+                       "rg": next((songs[i]["rg"] for i in idxs if songs[i]["rg"]), "")})
     import genrerules
 
     return {"songs": songs, "albums": albums, "playlists": read_playlists(), "genres": read_genre_list(),

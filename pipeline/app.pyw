@@ -91,6 +91,10 @@ class Api:
         """Stop the running download; the next queued one starts unless everything is True."""
         return self._downloads.stop(everything is True)
 
+    def library_album(self, name: str, artist: str) -> dict:
+        """How many tracks an album in your library has, from MusicBrainz ({} when it doesn't know it)."""
+        return _logged("looking up an album's track count", musicinfo.library_album, name, artist)
+
     def unqueue_download(self, qid: int) -> bool:
         """Take a download that hasn't started yet out of the queue."""
         return self._downloads.unqueue(qid)

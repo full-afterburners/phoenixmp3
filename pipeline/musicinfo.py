@@ -7,6 +7,7 @@
 # the standard one. Read-only: nothing here changes the library or downloads anything.
 # Profiles and album pages are cached for a week in pipeline/cache/, because a big
 # discography takes several MusicBrainz requests at one per second.
+import hashlib
 import json
 import re
 import threading
@@ -309,6 +310,28 @@ def _build_album(group_id: str) -> dict:
 def album(group_id: str) -> dict:
     group_id = check_id(group_id)
     return cached("albums", group_id, lambda: _build_album(group_id))
+
+
+def _find_library_album(name: str, artist: str) -> dict:
+    rows = mbsearch.search_albums(api(), name, artist)["results"]
+    same = [r for r in rows if _key(r["title"]) == _key(name)]
+    # the studio album over a live album or compilation with the same name
+    hit = min(same, key=lambda r: (bool(r["secondary"]), TYPE_RANK.get(r["type"], 9)), default=None)
+    if not hit:
+        return {}
+    editions = album(hit["id"])["editions"]
+    standard = next((g for g in editions if g["default"]), editions[0])
+    return {"rg": hit["id"], "tracks": standard["tracks"], "most": max(g["tracks"] for g in editions)}
+
+
+def library_album(name, artist) -> dict:
+    """An album in your library, which most songs know only by name: its MusicBrainz release group
+    and track count (standard edition; "most" is the biggest edition), or {} if MusicBrainz has no
+    album by that name and artist. Cached a week, like album pages."""
+    if not all(isinstance(v, str) and v.strip() and len(v) <= 300 for v in (name, artist)):
+        raise ValueError("bad album name")
+    key = hashlib.sha1(_key(artist, name).encode()).hexdigest()
+    return cached("libalbums", key, lambda: _find_library_album(name, artist))
 
 
 def release(release_id: str) -> dict:
