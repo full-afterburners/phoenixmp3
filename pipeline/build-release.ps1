@@ -46,7 +46,7 @@ $Code = "core.py", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.
         "icon.ico", "README.md",
         # the app window (app.pyw) and its helpers
         "app.pyw", "appdata.py", "appsettings.py", "installdir.py", "genrerules.py", "musicinfo.py", "downloadrun.py",
-        "myplaylists.py", "playlistrun.py"
+        "myplaylists.py", "playlistrun.py", "updates.py"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
 # The window's page: index.html, the sample search data and the bundled font (not the tests).
 $UiFiles = "ui\index.html", "ui\demo.json", "ui\fonts\inter-latin-wght-normal.woff2",
@@ -58,11 +58,13 @@ foreach ($f in $UiFiles) {
 }
 
 foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
-    robocopy (Join-Path $Pipeline $dir) (Join-Path $Stage "pipeline\$dir") /E /XD __pycache__ test tests /XF *.pyc /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy (Join-Path $Pipeline $dir) (Join-Path $Stage "pipeline\$dir") /E /XD __pycache__ test tests yt_dlp.previous /XF *.pyc *.previous /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Copying $dir failed (robocopy exit $LASTEXITCODE)" }
 }
 
 & $Py (Join-Path $Pipeline "make_notices.py") (Join-Path $Stage "pipeline\THIRD-PARTY-NOTICES.txt")
+# Which release this is, for Preferences > Updates (a working copy has no version.txt and is never told to update)
+Set-Content -Path (Join-Path $Stage "pipeline\version.txt") -Value $Version -Encoding ascii
 
 # Check nothing personal made it in.
 $personal = "library.db", "downloaded.txt", "unavailable.txt", "replaced.txt", "settings.json", "run-config.yaml",

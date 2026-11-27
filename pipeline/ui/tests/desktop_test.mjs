@@ -225,6 +225,18 @@ try {
       [...document.querySelectorAll('[aria-label=format] button')].find(b => b.getAttribute('aria-pressed') === 'true')?.textContent.toLowerCase() === ${JSON.stringify(real.settings.format)}`),
     real.folder);
   check("bad settings are refused", (await js(`window.pywebview.api.save_settings({format: 'wav'}).then(() => 'saved', e => e.message)`)).includes("can't set"));
+  // Updates: the real check (asks GitHub, writes cache/updates.json); installing is faked so the test
+  // never changes your yt-dlp
+  check("Updates shows the installed yt-dlp", await waitFor(`/yt-dlp/.test(document.getElementById('updatesCard')?.innerText || '') && /\\d{4}\\.\\d+\\.\\d+/.test(document.getElementById('updatesCard').innerText)`, 15000),
+    await js(`document.getElementById('updatesCard')?.innerText.split(String.fromCharCode(10)).slice(0, 4).join(' | ')`));
+  await js(`window.pywebview.api.install_update = tool => { window.__installed = tool; return window.pywebview.api.update_status(); }`);
+  await js(`document.getElementById('checkUpdates').click()`);
+  check("Check Now asks GitHub and says when", await waitFor(`!/not yet|Checking/.test(document.getElementById('updatesCard').innerText)`, 30000),
+    await js(`document.getElementById('updatesCard').innerText.split(String.fromCharCode(10)).slice(-3).join(' | ')`));
+  if (await js(`!!document.getElementById('update-ytdlp')`)) {
+    await js(`document.getElementById('update-ytdlp').click()`);
+    check("Update asks Python to install the newer yt-dlp", await waitFor(`window.__installed === 'ytdlp'`, 5000));
+  } else console.log("SKIP  yt-dlp is already the newest, nothing to update");
   await js(`location.hash = 'playlists'`);
   const nLists = await js(`window.pywebview.api.load('data').then(d => d.playlists.length)`);
   check("My Playlists shows each saved playlist", await waitFor(`document.querySelectorAll('#plist .pcard').length === ${nLists}`, 10000), `${nLists} playlists`);

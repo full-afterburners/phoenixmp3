@@ -32,7 +32,9 @@ Preferences has the format (AAC or MP3), where songs go and the rest of the sett
 phoenixmp3 needs Microsoft Edge WebView2, which comes with Windows 11 and with Edge on
 Windows 10. If it's missing, phoenixmp3 says so and offers Microsoft's download page.
 
-YouTube changes stuff every now and then, which breaks downloading.
+YouTube changes stuff every now and then, which breaks downloading. phoenixmp3 keeps
+its YouTube downloader (yt-dlp) up to date by itself, once a day; Preferences > Updates
+shows the versions and has Check Now. It also tells you when a new phoenixmp3 is out.
 
 
 Only download stuff you're allowed to, for your own use. This is built on a bunch of

@@ -1920,7 +1920,16 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     if (!dl.running) kids.push(h("div", { class: "summary" + (dl.result === "done" && !dl.problems.length ? "" : " warn") },
       h("div", {}, h("b", {}, dl.summary || title),
         dl.problems.length ? h("ul", {}, dl.problems.slice(-5).map(p => h("li", {}, p))) : null),
-      dl.result === "done" ? h("button", { class: "btn", type: "button", onclick: () => go("genres") }, icon("tag"), "Review Genres") : null));
+      dl.result === "done" ? h("button", { class: "btn", type: "button", onclick: () => go("genres") }, icon("tag"), "Review Genres") : null,
+      // yt-dlp's own words when it's out of date with YouTube: offer the fix right here
+      /requested format is not available|unable to extract|nsig|signature (function|extraction)|please report this issue/i.test([...dl.problems, ...dl.log].join("\n"))
+        ? h("button", { class: "btn primary", type: "button", id: "fixYtdlp", onclick: e => {
+            const b = e.currentTarget; b.disabled = true; b.textContent = "Updating yt-dlp…";
+            window.pywebview.api.check_updates()
+              .then(st => st.ytdlp.newer ? window.pywebview.api.install_update("ytdlp") : Promise.reject(new Error("yt-dlp is already the newest; YouTube may have changed again since")))
+              .then(st => { b.textContent = "Updated"; toast(`yt-dlp updated to ${st.ytdlp.have}. Try the download again.`); },
+                err => { b.disabled = false; b.textContent = "Update yt-dlp"; toast(`Couldn't update (${errText(err)})`); });
+          } }, icon("refresh"), "Update yt-dlp") : null));
     kids.push(h("div", { class: "steps" }, dl.steps.map(st => {
       const pct = st.state === "done" ? 100 : st.total ? Math.round(st.done / st.total * 100) : 0;
       const sub = { done: "Done", active: st.total ? `${Math.min(st.done, st.total)} of ${st.total}` : STEP_VERB[st.key], skipped: "Not needed", stopped: "Stopped", waiting: "Waiting", notrun: "Didn't run" }[st.state];
@@ -2164,6 +2173,46 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       onclick: e => { const btn = e.currentTarget; theme = t; applyTheme(t); try { localStorage.setItem("phx-theme", t); } catch (_) {}
         [...btn.parentNode.children].forEach(b => b.setAttribute("aria-pressed", String(b === btn))); onPick && onPick(t); } }, t[0].toUpperCase() + t.slice(1))));
   }
+  // Preferences > Updates (updates.py): yt-dlp and Deno update themselves once a day when that's on,
+  // never during a download; a newer phoenixmp3 release is only pointed to, with a link to its page.
+  function updatesGroup(pref) {
+    const card = h("div", { class: "card", id: "updatesCard" }, pref("Updates", "Checking…", null));
+    const when = t => t ? new Date(t * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "not yet";
+    const load = () => apiReady.then(() => window.pywebview.api.update_status())
+      .then(draw, e => card.replaceChildren(pref("Updates", `Couldn't read them (${errText(e)})`, null)));
+    function tool(st, key, name, desc) {
+      const t = st[key];
+      const btn = t.newer ? h("button", { class: "btn primary small", type: "button", id: `update-${key}`, disabled: st.installing,
+        onclick: e => {
+          const b = e.currentTarget; b.disabled = true; b.textContent = "Updating…";
+          window.pywebview.api.install_update(key).then(n => { toast(`${name} updated to ${n[key].have}`); draw(n); },
+            err => { toast(`Couldn't update ${name} (${errText(err)})`); load(); });
+        } }, `Update to ${t.latest}`) : null;
+      return pref(name, desc, h("div", { class: "row" },
+        h("span", { class: "note" }, !t.have ? "not found" : t.newer ? t.have : `${t.have} · up to date`), btn));
+    }
+    function draw(st) {
+      const app = st.app;
+      const auto = h("input", { type: "checkbox", id: "autoUpdate", role: "switch", checked: st.auto,
+        onchange: e => window.pywebview.api.set_auto_update(e.target.checked).then(() => toast("Saved"), err => { e.target.checked = !e.target.checked; toast(`Couldn't save (${errText(err)})`); }) });
+      const checkBtn = h("button", { class: "btn small", type: "button", id: "checkUpdates", onclick: e => {
+        e.currentTarget.disabled = true; e.currentTarget.textContent = "Checking…";
+        window.pywebview.api.check_updates().then(n => { draw(n); toast(n.error ? "Couldn't reach GitHub" : "Checked"); }, err => { toast(`Couldn't check (${errText(err)})`); load(); });
+      } }, "Check Now");
+      card.replaceChildren(
+        tool(st, "ytdlp", "yt-dlp", "Downloads from YouTube. When YouTube changes something, a newer yt-dlp is what gets downloads working again."),
+        tool(st, "deno", "Deno", "Helps yt-dlp get past YouTube's checks."),
+        pref("phoenixmp3", app.have ? "This app. New versions are on its GitHub page." : "This is a working copy, not a release, so it isn't checked for new versions.",
+          h("div", { class: "row" }, h("span", { class: "note" }, !app.have ? "" : app.newer ? `${app.have} · ${app.latest} is out` : `${app.have} · up to date`),
+            app.newer ? h("button", { class: "btn primary small", type: "button", onclick: () => window.pywebview.api.open_release_page()
+              .catch(e => toast(`Couldn't open it (${errText(e)})`)) }, "Download") : null)),
+        pref("Update automatically", "Once a day, yt-dlp and Deno are updated when there's a new version. Never during a download.",
+          h("label", { class: "switch" }, auto, h("span", {}))),
+        pref("Last checked", st.error ? "Couldn't reach GitHub last time; it tries again tomorrow, or now with Check Now." : when(st.checked), checkBtn));
+    }
+    load();
+    return h("div", { class: "group" }, h("h3", {}, "Updates"), card);
+  }
   function prefsPage(r) {
     const s = { ...r.settings };
     const save = changes => window.pywebview.api.save_settings(changes)
@@ -2218,6 +2267,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
           confirmRow)),
         h("div", { class: "group" }, h("h3", {}, "Appearance"), h("div", { class: "card" },
           pref("Theme", "Dark unless you pick another. System follows Windows.", themeSeg(t => window.pywebview.api.set_theme(t).catch(e => toast(`Couldn't save the theme (${errText(e)})`)))))),
+        updatesGroup(pref),
         h("div", { class: "group" }, h("h3", {}, "About"), h("div", { class: "card" },
           pref("phoenixmp3", "How it works, and the free open source tools it's built on.", h("div", { class: "row" },
             ...[["readme", "Read Me"], ["notices", "Licences"]].map(([doc, text]) => h("button", { class: "btn", type: "button",

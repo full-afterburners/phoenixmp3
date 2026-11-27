@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 PIPELINE = Path(__file__).resolve().parent
@@ -21,6 +22,8 @@ LOG = PIPELINE / "app.log"
 UI_PORT = 47613   # arbitrary, out of the common ranges
 NOW_PLAYING = PIPELINE / "cache" / "now-playing.m3u8"   # an album handed to the music player
 MAX_PLAY = 500
+AUTO_DELAY = 20          # seconds after opening before the daily update check
+AUTO_WAIT = 2 * 3600     # how long an automatic update waits for a running download
 
 # Same environment the pipeline steps get (see child_env in core.py), set before beets is imported.
 sys.path[:0] = [str(LIBS), str(PIPELINE)]
@@ -60,6 +63,7 @@ try:
     import installdir  # noqa: E402
     import musicinfo  # noqa: E402
     import myplaylists  # noqa: E402
+    import updates  # noqa: E402
 except Exception:
     # pythonw has no console: without this a broken install would just show nothing at all
     log.exception("the window's parts didn't load")
@@ -95,6 +99,8 @@ class Api:
         with self._busy:
             if self._refile.running():
                 raise ValueError("genres are being re-filed; download when that's finished")
+            if updates.installing():
+                raise ValueError("yt-dlp is being updated; download again in a minute")
             return _logged("starting a download", self._downloads.start, checked)
 
     def download_status(self) -> dict:
@@ -111,6 +117,59 @@ class Api:
     def unqueue_download(self, qid: int) -> bool:
         """Take a download that hasn't started yet out of the queue."""
         return self._downloads.unqueue(qid)
+
+    # ---------- Updates (updates.py) ----------
+
+    def update_status(self) -> dict:
+        return _logged("reading update status", updates.status)
+
+    def check_updates(self) -> dict:
+        """Ask GitHub now (Preferences > Check Now)."""
+        return _logged("checking for updates", updates.check, True)
+
+    def install_update(self, tool: str) -> dict:
+        """Install the newest yt-dlp or Deno now; refused while a download or a re-file runs."""
+        self._reserve_update()
+        return _logged(f"updating {tool}", updates.install, tool)
+
+    def _reserve_update(self) -> None:
+        with self._busy:   # the same lock downloads start under, so one can't begin halfway through
+            if self._downloads.running():
+                raise ValueError("a download is running; update when it's finished")
+            if self._refile.running():
+                raise ValueError("genres are being re-filed; update when that's finished")
+            if not updates.reserve():
+                raise ValueError("an update is already running")
+
+    def set_auto_update(self, on: bool) -> dict:
+        return _logged("saving the update setting", updates.set_auto, on is True)
+
+    def open_release_page(self) -> None:
+        """phoenixmp3's newest release on GitHub (only ever that page)."""
+        os.startfile(updates.status()["app"]["url"])
+
+    def _auto_update(self) -> None:
+        """Once a day, a while after the window opens: check, and install newer download tools when no
+        download or re-file is running (waiting up to AUTO_WAIT for one to finish). Runs on its own thread."""
+        time.sleep(AUTO_DELAY)
+        try:
+            if not updates.auto_enabled():
+                return
+            updates.check()
+            for tool in updates.pending():
+                for _ in range(AUTO_WAIT // 60):
+                    try:
+                        self._reserve_update()
+                        break
+                    except ValueError:
+                        time.sleep(60)
+                else:
+                    log.info("skipped updating %s: busy the whole time", tool)
+                    continue
+                updates.install(tool)
+                log.info("updated %s automatically", tool)
+        except Exception:   # noqa: BLE001 - a failed update must never bother the window; it's retried next start
+            log.exception("automatic update failed")
 
     def refile_library(self) -> None:
         """Re-file every song's genre with the settings in use (Preferences > Re-file my library)."""
@@ -292,9 +351,12 @@ def main() -> None:
         os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"--remote-debugging-port={port}"
     for problem in installdir.tidy():   # music_library + playlists.txt in place, pipeline hidden
         log.warning(problem)
+    api = Api()
+    if "--debug-port" not in args:   # UI test runs never update anything by themselves
+        threading.Thread(target=api._auto_update, daemon=True).start()
     url = f"http://127.0.0.1:{serve_ui()}/index.html?desktop"
     log.info("serving %s", url)
-    webview.create_window("phoenixmp3", url, js_api=Api(), width=1280, height=820, min_size=(900, 600),
+    webview.create_window("phoenixmp3", url, js_api=api, width=1280, height=820, min_size=(900, 600),
                           background_color="#1e1e20")
     # Its own taskbar entry with the app's icon, instead of being grouped under Python's.
     try:

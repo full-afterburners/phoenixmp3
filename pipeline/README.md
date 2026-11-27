@@ -166,9 +166,19 @@ In `pipeline\`:
 
 ## Updating yt-dlp
 
-When downloads start failing it's usually because YouTube changed something.
-Download the latest source from https://github.com/yt-dlp/yt-dlp and replace
-`yt-dlp-master\yt_dlp\` with the new `yt_dlp` folder.
+When downloads start failing it's usually because YouTube changed something, and
+a newer yt-dlp fixes it. The app does this itself (`updates.py`, Preferences >
+Updates): once a day it asks GitHub for the newest yt-dlp and Deno, checks the
+download against the published checksum, tries it, and swaps it in, keeping the
+old copy (`yt_dlp.previous`, `deno.exe.previous`) and putting it back if the new
+one doesn't run. Never during a download. Deno only updates within its major
+version. A failed download that looks like an outdated yt-dlp offers "Update
+yt-dlp" in Activity. A newer phoenixmp3 release is only pointed to (its version
+is in `version.txt`, written by `build-release.ps1`).
+
+By hand, if ever needed: download the latest source from
+https://github.com/yt-dlp/yt-dlp and replace `yt-dlp-master\yt_dlp\` with the
+new `yt_dlp` folder.
 
 ## Releases
 
