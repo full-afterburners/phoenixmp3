@@ -77,6 +77,8 @@ try {
   check("no Mockup tag in the app", await js(`!document.querySelector('.mock-tag')`));
   check("Music Folder is in the sidebar, wired to Python", await js(`!!document.getElementById('openFolder') && typeof window.pywebview.api.open_music_folder === 'function'`));
   check("its albums from your library show",await js(`document.querySelectorAll('.gpanel .tile').length > 0`));
+  check("an on-list genre lists the albums filed there first", await js(`document.querySelector('.gpanel .ptitle')?.firstChild.textContent === 'Filed here'`),
+    await js(`[...document.querySelectorAll('.gpanel .ptitle')].map(t => t.firstChild.textContent).join(' / ')`));
   check("popular albums arrive from Last.fm", await waitFor(`document.querySelectorAll('.gpanel .pop').length > 0 || /Couldn't reach|no top albums/.test(document.querySelector('.gpanel').innerText)`, 20000),
     (await js(`document.querySelectorAll('.gpanel .pop').length`)) + " albums");
   await js(`document.querySelector('.gpanel .pop img')?.scrollIntoView({ block: 'center' })`);   // covers load lazily, when seen

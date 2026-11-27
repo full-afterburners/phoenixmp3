@@ -1090,9 +1090,20 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const popular = [h("h4", { class: "ptitle" }, "Popular on Last.fm"),
       node.albums == null ? popularPending(sel, node, () => { if (st.sel === sel && document.body.contains(p)) render(); })
         : node.albums.length ? h("div", { class: "pop-grid" }, node.albums.map(a => popTile(a))) : h("p", { class: "note" }, "Last.fm has no top albums for this tag.")];
-    const albs = [...new Set(tagged.map(i => L.songs[i].alb))].map(i => L.albums[i]).sort((a, b) => b.added - a.added);
-    const yours = [h("h4", { class: "ptitle" }, "In your library", h("span", { class: "note" }, albs.length ? plural(albs.length, "album") : "")),
-      albs.length ? h("div", { class: "grid" }, albs.slice(0, 18).map(albumTile)) : h("p", { class: "note" }, "None of your songs have this tag yet.")];
+    // Albums, newest first. In the library: albums with songs filed here first, then the ones only
+    // carrying the tag (an artist tagged "hip hop" whose song is filed under pop shows there, not as filed).
+    const albumsOf = idxs => [...new Set(idxs.map(i => L.songs[i].alb))].map(i => L.albums[i]).sort((a, b) => b.added - a.added);
+    const albGrid = (title, albs, empty) => [h("h4", { class: "ptitle" }, title, h("span", { class: "note" }, albs.length ? plural(albs.length, "album") : "")),
+      albs.length ? h("div", { class: "grid" }, albs.slice(0, 18).map(albumTile)) : h("p", { class: "note" }, empty)];
+    let yours;
+    if (ctx === "library" && on) {
+      const filedAlbs = albumsOf(L.songs.map((s, i) => i).filter(i => (L.songs[i].g || "").toLowerCase() === sel));
+      const alsoAlbs = albumsOf(tagged).filter(a => !filedAlbs.includes(a));
+      yours = [...albGrid("Filed here", filedAlbs, "No songs filed here yet."),
+        ...(alsoAlbs.length ? albGrid("Also tagged with it, filed elsewhere", alsoAlbs, "") : [])];
+    } else {
+      yours = albGrid(ctx === "library" ? "Tagged with it" : "In your library", albumsOf(tagged), "None of your songs have this tag yet.");
+    }
     p.append(...(ctx === "library" ? [...yours, ...popular] : [...popular, ...yours]));
     return p;
   }
