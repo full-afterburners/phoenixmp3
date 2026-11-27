@@ -225,9 +225,16 @@ def main() -> None:
     log.info("serving %s", url)
     webview.create_window("phoenixmp3", url, js_api=Api(), width=1280, height=820, min_size=(900, 600),
                           background_color="#1e1e20")
+    # Its own taskbar entry with the app's icon, instead of being grouped under Python's.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("phoenixmp3.app")
+    except (AttributeError, OSError):
+        log.warning("couldn't set the taskbar id; the taskbar may show Python's icon")
     # private_mode off + a storage folder so the page remembers things like the theme between runs.
     try:
-        webview.start(gui="edgechromium", private_mode=False, storage_path=str(PIPELINE / "cache" / "webview"))
+        webview.start(gui="edgechromium", private_mode=False, storage_path=str(PIPELINE / "cache" / "webview"),
+                      icon=str(PIPELINE / "icon.ico"))
     except Exception:
         # Most likely no WebView2 on this PC: open the classic window instead of nothing.
         log.exception("the new window couldn't start; opening the classic one")
