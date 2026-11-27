@@ -98,9 +98,19 @@ app until the new one can do everything. Run it with `.\python\pythonw.exe app.p
   and recording into the files after `cleantitles.py`. The other steps are the
   classic window's, in the same order, using its helpers (imported from
   `gui.pyw`). A download and a genre re-file never run at the same time.
-- My Playlists and preferences don't work yet. The Classic Window button opens
-  `gui.pyw` for those, and `phoenixmp3.exe` opens this window (`--classic` for
-  the old one).
+- My Playlists (`myplaylists.py`) reads and edits `playlists.txt`, keeping
+  its comments; a "# Name" line right above a link names it. Update runs
+  the classic window's Update My Playlists as a download job
+  (`playlistrun.py`: list the playlists, look for another copy of songs
+  YouTube won't serve, download, tag, write .m3u8 files when that's on).
+- Preferences (`appsettings.py`) go through `gui.pyw`'s own
+  `load_settings()`/`save_settings()`, so both windows share settings.json.
+  The theme is kept in `app-prefs.json`.
+- The page uses Inter from `ui/fonts/` (SIL Open Font License), so the app
+  makes no request to Google Fonts. A fresh install with no `library.db` yet
+  opens to an empty library.
+- `phoenixmp3.exe` opens this window. `--classic` or the Classic Window
+  button opens `gui.pyw`, and so does a PC without WebView2.
 
 The same page also runs outside the app as a design mockup. Without
 `?desktop` it loads `data.json`/`genres.json` snapshots and `demo.json`

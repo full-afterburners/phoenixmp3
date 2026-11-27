@@ -110,7 +110,11 @@ def load_settings():
 
 
 def save_settings(s):
-    SETTINGS_FILE.write_text(json.dumps(s, indent=2), encoding="utf-8")
+    # Write then rename: reading a half-written file would fall back to the defaults,
+    # and the next save would keep those (the new window reads settings from other threads).
+    tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(s, indent=2), encoding="utf-8")
+    os.replace(tmp, SETTINGS_FILE)
 
 
 def write_run_config(s):

@@ -54,14 +54,17 @@ let userTheme = null;   // the theme you picked, restored when the test ends
 try {
   let { ws, js, waitFor } = await connect();
   check("page runs in app mode with the Python bridge", await waitFor(`!!(window.pywebview && window.pywebview.api && window.pywebview.api.load)`));
-  // your own theme choice is put back at the end; clear it here to see the default
-  userTheme = await js(`localStorage.getItem('phx-theme')`);
-  await js(`localStorage.removeItem('phx-theme'); location.reload()`);
+  // your own theme choice (kept by Python in app-prefs.json, and by the page) is put back at the end
+  await waitFor(`!!window.pywebview.api.get_settings`);
+  userTheme = (await js(`window.pywebview.api.get_settings().then(r => r.theme)`)) || (await js(`localStorage.getItem('phx-theme')`)) || "dark";
+  await js(`window.pywebview.api.set_theme('dark').then(() => { localStorage.removeItem('phx-theme'); location.reload(); })`);
   await sleep(500);
-  check("dark mode is the default", await waitFor(`document.readyState === 'complete' && document.documentElement.dataset.theme === 'dark'`));
+  check("dark theme shows", await waitFor(`document.readyState === 'complete' && document.documentElement.dataset.theme === 'dark'`));
   check("library loads from Python", await waitFor(`!document.querySelector('#view .empty') && document.querySelectorAll('#view .tile, #view .art').length > 0`, 60000),
     await js(`document.querySelector('#view')?.innerText.slice(0, 80)`));
 
+  check("the bundled Inter font loads (no Google Fonts in the app)", await waitFor(`document.fonts.ready.then(() =>
+    [...document.fonts].some(f => f.family.includes('InterApp') && f.status === 'loaded') && !document.querySelector('link[href*="fonts.googleapis"]'))`, 10000));
   await js(`location.hash = 'albums'`);
   check("Albums shows the library's albums", await waitFor(`document.querySelectorAll('#view .tile').length > 50`), (await js(`document.querySelectorAll('#view .tile').length`)) + " tiles");
   check("album covers come through", await js(`[...document.querySelectorAll('#view img')].filter(i => i.src.startsWith('data:image/jpeg')).length > 50`));
@@ -159,15 +162,29 @@ try {
     await js(`document.getElementById('toast').textContent`));
   check("after the reload the chart shows the settings actually saved", await waitFor(`document.querySelector('.ochart .ocard[data-name="${g.toLowerCase()}"]')?.classList.contains('on')`, 15000));
 
-  // preferences survive a restart (WebView2 profile kept in pipeline/cache/webview)
-  await js(`localStorage.setItem('phx-theme', 'light')`);
-  await sleep(2000);   // WebView2 writes localStorage to disk a moment later; closing at once can lose it
+  // ---- Preferences and My Playlists (read-only here: saving or editing them would change your files;
+  // they're tested in a sandbox copy of the app)
+  await js(`location.hash = 'prefs'`);
+  const real = await js(`window.pywebview.api.get_settings()`);
+  check("Preferences show the real settings", await waitFor(`!!document.getElementById('musicFolder')`, 10000) &&
+    await js(`document.getElementById('musicFolder').textContent === ${JSON.stringify(real.folder)} &&
+      [...document.querySelectorAll('[aria-label=format] button')].find(b => b.getAttribute('aria-pressed') === 'true')?.textContent.toLowerCase() === ${JSON.stringify(real.settings.format)}`),
+    real.folder);
+  check("bad settings are refused", (await js(`window.pywebview.api.save_settings({format: 'wav'}).then(() => 'saved', e => e.message)`)).includes("can't set"));
+  await js(`location.hash = 'playlists'`);
+  const nLists = await js(`window.pywebview.api.load('data').then(d => d.playlists.length)`);
+  check("My Playlists shows each saved playlist", await waitFor(`document.querySelectorAll('#plist .pcard').length === ${nLists}`, 10000), `${nLists} playlists`);
+  if (nLists) check("the first playlist gets checked for new songs", await waitFor(`!/Checking/.test(document.querySelector('#plist .pcard .chip').textContent)`, 90000),
+    await js(`document.querySelector('#plist .pcard').innerText.split(String.fromCharCode(10)).join(' | ')`));
+
+  // preferences survive a restart: the theme comes back from Python even if WebView2 lost the page's copy
+  await js(`window.pywebview.api.set_theme('light').then(() => localStorage.removeItem('phx-theme'))`);
   ws.close(); await stop(app); await sleep(1000);
   app = launch();
   ({ ws, js, waitFor } = await connect());
   check("theme choice is remembered after a restart", await waitFor(`document.documentElement.dataset.theme === 'light'`),
     await js(`'stored=' + localStorage.getItem('phx-theme') + ' theme=' + document.documentElement.dataset.theme + ' ' + location.href`));
-  await js(userTheme ? `localStorage.setItem('phx-theme', ${JSON.stringify(userTheme)})` : `localStorage.removeItem('phx-theme')`);
+  await js(`window.pywebview.api.set_theme(${JSON.stringify(userTheme)}).then(() => localStorage.setItem('phx-theme', ${JSON.stringify(userTheme)}))`);
   check("second start is fast (covers cached)", await waitFor(`document.querySelectorAll('#view .tile, #view .art').length > 0`, 5000));
   ws.close();
 } catch (e) {

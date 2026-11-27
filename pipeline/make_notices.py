@@ -30,8 +30,17 @@ fpcalc / Chromaprint (pipeline\\bin\\fpcalc.exe) - Chromaprint is MIT licensed,
     the fpcalc binary includes FFmpeg libraries (LGPL 2.1).
     https://acoustid.org/chromaprint
 
+Inter typeface (pipeline\\ui\\fonts) - SIL Open Font License 1.1.
+    Full text: pipeline\\ui\\fonts\\OFL.txt. https://github.com/rsms/inter
+    (files from the @fontsource-variable/inter package)
+
+proxy_tools 0.1.0 (pipeline\\libs\\proxy_tools, used by pywebview) - BSD
+    licence, adapted from Werkzeug. https://github.com/jtushman/proxy_tools
+
 Online services used: MusicBrainz (https://musicbrainz.org/), AcoustID
-(https://acoustid.org/) and YouTube.
+(https://acoustid.org/), YouTube, Last.fm (https://www.last.fm/), the Cover
+Art Archive (https://coverartarchive.org/) and Wikidata / Wikimedia Commons
+(artist photos).
 """
 
 

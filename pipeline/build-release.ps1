@@ -42,8 +42,19 @@ Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "READ ME.txt")
 $Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.py",
         "writeplaylists.py", "findcopy.py", "fixartists.py", "fillgenres.py", "genres.txt",
         "mbsearch.py", "findtracks.py", "presettags.py", "make_notices.py", "get-music.ps1", "config.yaml",
-        "icon.ico", "README.md"
+        "icon.ico", "README.md",
+        # the new window (app.pyw) and its helpers
+        "app.pyw", "appdata.py", "appsettings.py", "genrerules.py", "musicinfo.py", "downloadrun.py",
+        "myplaylists.py", "playlistrun.py"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
+# The window's page: index.html, the sample search data and the bundled font (not the tests).
+$UiFiles = "ui\index.html", "ui\demo.json", "ui\fonts\inter-latin-wght-normal.woff2",
+           "ui\fonts\inter-latin-ext-wght-normal.woff2", "ui\fonts\OFL.txt"
+foreach ($f in $UiFiles) {
+    $dest = Join-Path $Stage "pipeline\$f"
+    New-Item -ItemType Directory -Force (Split-Path -Parent $dest) | Out-Null
+    Copy-Item (Join-Path $Pipeline $f) $dest
+}
 
 foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
     robocopy (Join-Path $Pipeline $dir) (Join-Path $Stage "pipeline\$dir") /E /XD __pycache__ test tests /XF *.pyc /NFL /NDL /NJH /NJS /NP | Out-Null
@@ -55,7 +66,8 @@ foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
 # Check nothing personal made it in.
 $personal = "library.db", "downloaded.txt", "unavailable.txt", "replaced.txt", "settings.json", "run-config.yaml",
             "playlists.txt", "playlists-run.json", "findcopy-run.json", "shortcut.txt", "last-run.log", "import.log",
-            "my-genres.txt", "my-genres.yaml", "app.log"
+            "my-genres.txt", "my-genres.yaml", "app.log", "app-prefs.json", "findtracks-run.json",
+            "search-run.json"
 $found = Get-ChildItem -Recurse -File $Stage | Where-Object { $personal -contains $_.Name -or $_.Extension -eq ".lnk" }
 if ($found) { throw "Personal files in the build: $($found.FullName -join ', ')" }
 $who  = [regex]::Escape($env:USERNAME)

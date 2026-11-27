@@ -2,9 +2,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>phoenixmp3</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<script>
+  // The app has Inter in ui/fonts/ (works offline, no request to Google). The claude.ai mockup
+  // can't reach those files, so it gets Inter from Google Fonts.
+  if (!new URLSearchParams(location.search).has("desktop")) document.write('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">');
+</script>
 <style>
+/* Inter (SIL Open Font License, fonts/OFL.txt), from the @fontsource-variable/inter package */
+@font-face { font-family: "InterApp"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "InterApp"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 /* Layout: a one-screen desktop app. Frosted sidebar (search, library, playlists) | main pane with a
    status "LCD" capsule on top (what phoenixmp3 is doing right now) and the current view below. */
 :root {
@@ -32,7 +42,7 @@
   --flame: linear-gradient(100deg, #ff2d55 0%, #ff5a36 45%, #ffa52e 100%);
   --shadow-art: 0 1px 2px rgba(0,0,0,.08), 0 6px 18px rgba(0,0,0,.10);
   --shadow-pop: 0 10px 40px rgba(0,0,0,.16), 0 2px 6px rgba(0,0,0,.08);
-  --font: "Inter", -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font: "InterApp", "Inter", -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --r-art: 8px;
 }
 @media (prefers-color-scheme: dark) {
@@ -298,6 +308,7 @@ svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none;
 .choice small { color: var(--ink-2); }
 .browse.in-lib { max-width: none; margin-top: 0; }
 .btn.small { height: 26px; padding: 0 9px; font-size: 12px; }
+[hidden] { display: none !important; }   /* .btn, .pref etc. set display, which would beat the hidden attribute */
 a.btn { text-decoration: none; color: inherit; }
 a.btn.primary { color: var(--accent-ink); }
 
@@ -446,6 +457,16 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
 .pcard { border-radius: 14px; border: 1px solid var(--line); padding: 14px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: center; background: var(--raised); }
 .pcard .pmos { width: 64px; height: 64px; border-radius: 10px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; box-shadow: var(--shadow-art); }
 .pcard .pmos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pcard .pmos .art-ph { grid-column: 1 / -1; grid-row: 1 / -1; width: 100%; height: 100%; font-size: 24px; }
+.pcard .pmos.one { grid-template-columns: 1fr; }
+.pcard .note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; font-weight: 600; font-size: 12.5px; }
+.field input { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); padding: 0 10px; font: inherit; font-weight: 400; outline: none; }
+.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sheet .err { color: var(--bad); font-size: 12px; margin-top: 8px; }
+.switch input:disabled + span { opacity: .4; }
+.switch input:disabled { cursor: default; }
+.folder-path { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
 .pcard b { font-size: 14px; display: block; }
 .pcard .row { margin-top: 6px; }
 
@@ -590,6 +611,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   const $ = id => document.getElementById(id);
   const view = $("view");
   let L = null;   // library data
+  let loadError = "";   // why the library couldn't load, shown on every page instead of "Loading…"
 
   // ---------- tiny helpers ----------
   function h(tag, attrs, ...kids) {
@@ -666,7 +688,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       a.toggleAttribute("aria-current", match); if (match) a.setAttribute("aria-current", "page");
     });
     $("app").classList.remove("open");
-    if (!L) { view.replaceChildren(h("div", { class: "empty" }, "Loading your library…")); return; }
+    if (!L) { view.replaceChildren(h("div", { class: "empty" }, loadError ? `Couldn't load the library (${loadError}).` : "Loading your library…")); return; }
     view.replaceChildren(fn(decodeURIComponent(arg)));
     view.scrollTop = 0;
   }
@@ -681,6 +703,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
 
   function viewRecent() {
     const sorted = [...L.albums].sort((a, b) => b.added - a.added);
+    if (!sorted.length) return h("div", {}, head("Recently Added"), h("div", { class: "empty" }, "No music yet. ",
+      h("a", { href: "#get", style: "color:var(--accent)" }, "Get Music"), " to download your first songs."));
     return h("div", {}, head("Recently Added"), h("div", { class: "grid" }, sorted.slice(0, 60).map(albumTile)));
   }
   function lastRun() {   // songs added in the most recent session (within 3 h of the newest)
@@ -1662,6 +1686,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       if (changed) drawRun();
       if (st.running) { setTimeout(tick, 800); return; }
       dlWatching = false;
+      if (st.kind === "playlists") plChecks.clear();   // counts changed: check them again next time
       toast(st.result === "done" ? `Finished: ${st.summary}` : st.summary || "The download ended");
       reloadLibrary().catch(e => toast(`Couldn't reload the library (${errText(e)})`));
     }, e => { dlWatching = false; toast(`Lost track of the download (${errText(e)})`); });
@@ -1807,8 +1832,98 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     return frag;
   }
 
+  // ---------- a small dialog ----------
+  function sheet(label, ...content) {
+    const back = h("div", { class: "sheet-back", onclick: e => { if (e.target === back) close(); } });
+    const onKey = e => { if (e.key === "Escape") close(); };
+    function close() { back.remove(); document.removeEventListener("keydown", onKey); }
+    back.append(h("div", { class: "sheet wide", role: "dialog", "aria-modal": "true", "aria-label": label }, h("div", {}, ...content)));
+    document.body.append(back);
+    document.addEventListener("keydown", onKey);
+    setTimeout(() => (back.querySelector("input") || back.querySelector(".btn.primary"))?.focus(), 0);
+    return close;
+  }
+
+  // ---------- my playlists in the app (playlists.txt via myplaylists.py) ----------
+  const plChecks = new Map();   // url -> "checking", a check_playlist() answer, or {error}
+  let plChecking = false;
+  function viewPlaylistsApp() {
+    const frag = h("div", {});
+    frag.append(head("My Playlists", "YouTube playlists phoenixmp3 keeps in sync",
+      h("button", { class: "btn", type: "button", id: "addPlaylist", onclick: addPlaylistSheet }, icon("plus"), "Add Playlist"),
+      L.playlists.length ? h("button", { class: "btn", type: "button", onclick: () => { if (!plChecking) { plChecks.clear(); route(); } } }, icon("refresh"), "Check Again") : null,
+      L.playlists.length ? h("button", { class: "btn primary", type: "button", id: "updateAll",
+        onclick: () => startDownload({ kind: "playlists", urls: L.playlists.map(p => p.url) }) }, icon("get"), "Update All") : null));
+    if (!L.playlists.length) {
+      frag.append(h("div", { class: "empty" }, "No playlists yet. Add a YouTube or YouTube Music playlist and Update gets its new songs whenever you like."));
+      return frag;
+    }
+    frag.append(h("div", { class: "plist", id: "plist" }, L.playlists.map(plCard)));
+    frag.append(h("p", { class: "note", style: "margin-top:16px" }, "Songs YouTube no longer plays are swapped for another upload of the same song when one exists (same artist, same version, within 10 seconds)."));
+    if (!plChecking && L.playlists.some(p => !plChecks.has(p.url))) checkPlaylists();
+    return frag;
+  }
+  function plCard(p) {
+    const c = plChecks.get(p.url), ready = c && c !== "checking" && !c.error;
+    const status = !c || c === "checking" ? h("span", { class: "chip mute" }, "Checking…")
+      : c.error ? h("span", { class: "chip bad", title: c.error }, "Couldn't read it")
+      : c.new.length ? h("span", { class: "chip acc" }, `${c.new.length} new`) : h("span", { class: "chip ok" }, icon("check"), "Up to date");
+    const desc = ready ? sep(plural(c.total, "song"), c.unavailable ? `${c.unavailable} unavailable` : "", c.swapped ? `${c.swapped} from another copy` : "")
+      : c && c.error ? c.error : "Looking for new songs…";
+    const thumbs = ready ? c.thumbs : [];
+    const mos = thumbs.length >= 4 ? h("div", { class: "pmos" }, thumbs.slice(0, 4).map(t => h("img", { src: t, alt: "", loading: "lazy" })))
+      : thumbs.length ? h("div", { class: "pmos one" }, h("img", { src: thumbs[0], alt: "" })) : h("div", { class: "pmos" }, placeholder(p.name, "art-ph"));
+    return h("div", { class: "pcard", "data-url": p.url }, mos,
+      h("div", {}, h("b", {}, p.name), h("p", { class: "note", title: ready ? c.title : "" }, desc),
+        h("div", { class: "row" }, status,
+          h("button", { class: "btn ghost small", type: "button", onclick: () => startDownload({ kind: "playlists", urls: [p.url] }) }, "Update"),
+          h("button", { class: "btn ghost small", type: "button", onclick: () => removePlaylistSheet(p) }, "Remove"))));
+  }
+  function checkPlaylists() {   // one at a time like the classic window, each card redrawn as its answer comes
+    plChecking = true;
+    const next = () => {
+      const p = L.playlists.find(x => !plChecks.has(x.url));
+      if (!p) { plChecking = false; return; }
+      plChecks.set(p.url, "checking"); redrawCard(p);
+      window.pywebview.api.check_playlist(p.url).then(c => plChecks.set(p.url, c), e => plChecks.set(p.url, { error: errText(e) }))
+        .then(() => { redrawCard(p); next(); });
+    };
+    apiReady.then(next);
+  }
+  function redrawCard(p) {
+    const old = [...document.querySelectorAll("#plist .pcard")].find(x => x.dataset.url === p.url);
+    if (old) old.replaceWith(plCard(p));
+  }
+  function playlistsChanged(list) { L.playlists = list; derive(); route(); }
+  function addPlaylistSheet() {
+    const url = h("input", { type: "url", id: "plUrl", placeholder: "https://music.youtube.com/playlist?list=…", autocomplete: "off" });
+    const name = h("input", { type: "text", id: "plName", placeholder: "Gym", maxlength: 39, autocomplete: "off" });
+    const err = h("p", { class: "err", role: "alert" });
+    const save = h("button", { class: "btn primary", type: "button", id: "plSave", onclick: () => {
+      save.disabled = true; err.textContent = "";
+      apiReady.then(() => window.pywebview.api.add_playlist(url.value.trim(), name.value.trim()))
+        .then(list => { close(); playlistsChanged(list); toast(`Added ${name.value.trim() || "the playlist"}`); },
+          e => { err.textContent = `Couldn't add it: ${errText(e)}`; save.disabled = false; });
+    } }, "Add");
+    const close = sheet("Add a playlist", h("h3", {}, "Add a Playlist"),
+      h("p", { class: "note" }, "Update downloads the songs in it you don't have yet. It stays saved in playlists.txt."),
+      h("label", { class: "field" }, "YouTube or YouTube Music playlist link", url),
+      h("label", { class: "field" }, "Name (optional)", name), err,
+      h("div", { class: "row" }, save, h("button", { class: "btn ghost", type: "button", onclick: () => close() }, "Cancel")));
+    [url, name].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") save.click(); }));
+  }
+  function removePlaylistSheet(p) {
+    const close = sheet("Remove a playlist", h("h3", {}, `Remove ${p.name}?`),
+      h("p", { class: "note", style: "margin-top:6px" }, "It comes out of My Playlists. Songs you downloaded from it stay in your library."),
+      h("div", { class: "row" },
+        h("button", { class: "btn primary", type: "button", onclick: () => window.pywebview.api.remove_playlist(p.url)
+          .then(list => { close(); plChecks.delete(p.url); playlistsChanged(list); toast(`Removed ${p.name}`); }, e => toast(`Couldn't remove it (${errText(e)})`)) }, "Remove"),
+        h("button", { class: "btn ghost", type: "button", onclick: () => close() }, "Cancel")));
+  }
+
   // ---------- my playlists ----------
   function viewPlaylists() {
+    if (IN_APP) return viewPlaylistsApp();
     const frag = h("div", {});
     frag.append(head("My Playlists", "YouTube playlists phoenixmp3 keeps in sync",
       h("button", { class: "btn", type: "button", onclick: () => toast("Paste a YouTube or YouTube Music playlist link to keep it in sync") }, icon("plus"), "Add Playlist"),
@@ -1826,7 +1941,73 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
 
   // ---------- preferences ----------
   const prefsState = { format: "aac", layout: "flat", pause: 10, square_art: true, small_art: false, playlist_files: false, replaygain: false, source: "track", family: "history" };
+  // In the app, settings are read from and saved to settings.json through Python (appsettings.py)
+  function viewPrefsApp() {
+    return later(apiReady.then(() => window.pywebview.api.get_settings()), prefsPage, "Loading your preferences…");
+  }
+  function themeSeg(onPick) {
+    return h("div", { class: "seg", role: "group", "aria-label": "Theme" }, ["dark", "light", "system"].map(t => h("button", { type: "button",
+      "aria-pressed": String(theme === t),
+      onclick: e => { const btn = e.currentTarget; theme = t; applyTheme(t); try { localStorage.setItem("phx-theme", t); } catch (_) {}
+        [...btn.parentNode.children].forEach(b => b.setAttribute("aria-pressed", String(b === btn))); onPick && onPick(t); } }, t[0].toUpperCase() + t.slice(1))));
+  }
+  function prefsPage(r) {
+    const s = { ...r.settings };
+    const save = changes => window.pywebview.api.save_settings(changes)
+      .then(n => { Object.assign(s, n.settings); toast("Saved"); return n; }, e => { toast(`Couldn't save (${errText(e)})`); throw e; });
+    const pref = (title, desc, control) => h("div", { class: "pref" }, h("div", {}, h("b", {}, title), h("small", {}, desc)), control);
+    const seg = (key, opts, after) => h("div", { class: "seg", role: "group", "aria-label": key }, Object.entries(opts).map(([v, t]) => h("button", {
+      type: "button", "aria-pressed": String(s[key] === v),
+      onclick: e => { const btn = e.currentTarget; save({ [key]: v }).then(() => { [...btn.parentNode.children].forEach(b => b.setAttribute("aria-pressed", String(b === btn))); after && after(); }, () => {}); } }, t)));
+    const sw = (key, id, after) => {
+      const input = h("input", { type: "checkbox", id, role: "switch", checked: s[key],
+        onchange: e => { const v = e.target.checked; save({ [key]: v }).then(() => after && after(), () => { e.target.checked = !v; }); } });
+      return h("label", { class: "switch" }, input, h("span", {}));
+    };
+    const example = h("code", {});
+    const showEx = () => example.textContent = s.layout === "flat" ? "Artist - Title.m4a" : "Artist\\Album\\Title.m4a";
+    showEx();
+    const pauseText = v => v ? `about ${Math.round(v * 1.5)} s` : "no wait";
+    const pauseOut = h("span", { class: "note", style: "width:70px" }, pauseText(s.pause));
+    const small = sw("small_art", "smArt");
+    const syncSmall = () => { small.querySelector("input").disabled = !s.square_art; };
+    syncSmall();
+    const folder = h("code", { class: "folder-path", id: "musicFolder", title: r.folder }, r.folder);
+    const defaultBtn = h("button", { class: "btn ghost small", type: "button", hidden: r.default_folder,
+      onclick: () => save({ output_dir: "" }).then(n => showFolder(n), () => {}) }, "Default");
+    const showFolder = n => { folder.textContent = n.folder; folder.title = n.folder; defaultBtn.hidden = n.default_folder; };
+    const confirmRow = h("div", { class: "pref", hidden: true },
+      h("div", {}, h("b", {}, "Re-file every song?"), h("small", {}, "Songs whose genre you set by hand keep it. Nothing downloads; it uses saved Last.fm tags, and looks up songs that have none yet.")),
+      h("div", { class: "row" }, h("button", { class: "btn", type: "button", onclick: () => confirmRow.hidden = true }, "Cancel"),
+        h("button", { class: "btn primary", type: "button", id: "refileNow", onclick: () => { confirmRow.hidden = true;
+          window.pywebview.api.refile_library().then(() => { toast("Re-filing genres…"); watchRefile(); }, e => toast(`Couldn't start it (${errText(e)})`)); } }, "Re-file")));
+    return h("div", {}, head("Preferences", "Changes apply to your next download"),
+      h("div", { class: "prefs" },
+        h("div", { class: "group" }, h("h3", {}, "Downloads"), h("div", { class: "card" },
+          pref("Format", "AAC (.m4a) keeps YouTube's audio as it is. MP3 (about 190 kbps) plays on everything, car stereos included.", seg("format", { aac: "AAC", mp3: "MP3" })),
+          pref("Pause between songs", "Waiting after each song keeps YouTube from blocking you. No wait can get you blocked after 50 or so songs.",
+            h("div", { class: "range" }, h("input", { type: "range", id: "pause", min: 0, max: 30, value: s.pause, "aria-label": "Seconds between songs",
+              oninput: e => { pauseOut.textContent = pauseText(+e.target.value); }, onchange: e => save({ pause: +e.target.value }).catch(() => {}) }), pauseOut)))),
+        h("div", { class: "group" }, h("h3", {}, "Library"), h("div", { class: "card" },
+          pref("Music folder", "Where finished songs go. Changing it doesn't move songs you already have.", h("div", { class: "row" }, folder, defaultBtn,
+            h("button", { class: "btn", type: "button", id: "chooseFolder", onclick: () => window.pywebview.api.choose_folder()
+              .then(n => { if (n) { showFolder(n); toast("Music folder changed"); } }, e => toast(`Couldn't change it (${errText(e)})`)) }, "Change…"))),
+          h("div", { class: "pref" }, h("div", {}, h("b", {}, "Folder layout"), h("small", {}, "Example: ", example)), seg("layout", { flat: "One folder", folders: "Artist / Album" }, showEx)),
+          pref("Square cover art", "Crops YouTube's widescreen thumbnails to square.", sw("square_art", "sqArt", syncSmall)),
+          pref("Small cover art", "300 px instead of 500, for players that struggle with big images.", small),
+          pref("Even out loudness", "ReplayGain tags (and iTunes Sound Check), so songs play at the same volume. Tagging gets a bit slower.", sw("replaygain", "rg")),
+          pref("Playlist files", "Writes an .m3u8 for each of My Playlists when you update them.", sw("playlist_files", "plf")))),
+        h("div", { class: "group" }, h("h3", {}, "Genres"), h("div", { class: "card" },
+          pref("Genre settings", "Which genres to use, where tags come from and how sub-genres group are set in the Genres tab, which shows how many songs a change moves.",
+            h("button", { class: "btn", type: "button", onclick: () => go("genres") }, icon("chart"), "Open Genres")),
+          pref("Re-file my library", "Apply the genre settings in use to songs you already have.", h("button", { class: "btn", type: "button", onclick: () => confirmRow.hidden = false }, icon("refresh"), "Re-file…")),
+          confirmRow)),
+        h("div", { class: "group" }, h("h3", {}, "Appearance"), h("div", { class: "card" },
+          pref("Theme", "Dark unless you pick another. System follows Windows.", themeSeg(t => window.pywebview.api.set_theme(t).catch(e => toast(`Couldn't save the theme (${errText(e)})`))))))));
+  }
+
   function viewPrefs() {
+    if (IN_APP) return viewPrefsApp();
     const s = prefsState;
     const seg = (key, opts) => h("div", { class: "seg", role: "group" }, Object.entries(opts).map(([v, t]) => h("button", { type: "button", "aria-pressed": String(s[key] === v),
       onclick: e => { s[key] = v; [...e.target.parentNode.children].forEach(b => b.setAttribute("aria-pressed", String(b === e.target))); saved(); } }, t)));
@@ -1884,6 +2065,11 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     if (IN_APP) window.pywebview.api.refile_status().then(st => { if (st.running) watchRefile(); }, () => {});
     // the same for a download started before a reload
     if (IN_APP) window.pywebview.api.download_status().then(st => { if (st.running) { dl = st; watchDownload(); } }, () => {});
-  }).catch(err => { view.replaceChildren(h("div", { class: "empty" }, `Couldn't load the library (${errText(err)}).`)); });
+    // The theme is kept in Python too (app-prefs.json): WebView2 can lose a just-saved localStorage value
+    if (IN_APP) window.pywebview.api.get_settings().then(r => {
+      if (!r.theme) return window.pywebview.api.set_theme(theme);   // first start: keep the one the page remembered
+      if (r.theme !== theme) { theme = r.theme; applyTheme(theme); try { localStorage.setItem("phx-theme", theme); } catch (_) {} }
+    }).catch(() => {});
+  }).catch(err => { loadError = errText(err); route(); });
 })();
 </script>

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import gui
 import musicinfo
+import myplaylists
+import playlistrun
 
 PIPELINE = gui.PIPELINE
 RAW = gui.RAW
@@ -34,7 +36,7 @@ VIDEO_ID = re.compile(r"^[0-9A-Za-z_-]{11}$")
 ID_IN_NAME = re.compile(r"\[([0-9A-Za-z_-]{11})\]")
 # How much of the bar each step fills
 STEPS = [("find", "Find", 0.12), ("download", "Download", 0.5), ("clean", "Clean up", 0.06),
-         ("tag", "Tag", 0.14), ("albums", "Albums", 0.08), ("genres", "Genres", 0.1)]
+         ("tag", "Tag", 0.14), ("albums", "Albums", 0.08), ("genres", "Genres", 0.1), ("lists", "Playlist files", 0.02)]
 
 # yt-dlp's output (same patterns as gui.pyw's _yt_filter)
 ITEM_RE = re.compile(r"\[download\] Downloading item (\d+) of (\d+)")
@@ -87,6 +89,14 @@ def parse_job(job) -> dict:
         rel = data["release"]
         return {"kind": "album", "release": rel, "tracks": data["tracks"], "picks": picks,
                 "label": f"{rel['title']} · {rel['artist']}"}
+    if job.get("kind") == "playlists":
+        saved = {p["url"]: p["name"] for p in myplaylists.read()}
+        urls = job.get("urls")
+        if not isinstance(urls, list) or not urls or not all(isinstance(u, str) and u in saved for u in urls):
+            raise ValueError("those aren't in My Playlists")
+        urls = list(dict.fromkeys(urls))
+        return {"kind": "playlists", "urls": urls, "names": {u: saved[u] for u in urls},
+                "label": saved[urls[0]] if len(urls) == 1 else f"My Playlists ({len(urls)})"}
     raise ValueError("unknown kind of download")
 
 
@@ -118,8 +128,7 @@ class DownloadRun:
             self._state = {
                 "running": True, "seq": self._state["seq"] + 1, "label": job["label"], "kind": job["kind"],
                 "release_id": job["release"]["id"] if album else None, "result": None, "summary": "", "problems": [],
-                "now": "Starting", "steps": [{"key": k, "name": n, "state": "skipped" if k == "find" and not album else "waiting",
-                                              "done": 0, "total": 0} for k, n, _ in STEPS],
+                "now": "Starting", "steps": [_first_step(k, n, job, gui.load_settings()) for k, n, _ in STEPS],
                 "songs": songs, "log": [],
             }
         threading.Thread(target=self._worker, args=(job,), daemon=True).start()
@@ -297,8 +306,9 @@ class DownloadRun:
             out.append((i, v))
         return out
 
-    def _download(self, targets: list[str], s: dict) -> dict:
-        """yt-dlp on the targets, with the classic window's options. Returns {"songs", "blocked", "dead"}."""
+    def _download(self, targets: list[str], s: dict, known_only: bool = False) -> dict:
+        """yt-dlp on the targets, with the classic window's options. Returns {"songs", "blocked", "dead"}.
+        known_only: a playlist lists every song it has had; only new ones (already in the list) get a row."""
         if s["format"] == "mp3":
             fmt_args = ["-f", "bestaudio", "-x", "--audio-format", "mp3", "--audio-quality", "2"]
         else:
@@ -325,10 +335,15 @@ class DownloadRun:
                 st["id"] = m.group(1)
                 return None
             if m := ARCHIVED_RE.search(line):
-                # yt-dlp checks the archive before looking the video up, so the id is on this line
-                vid = m.group(1) if VIDEO_ID.match(m.group(1)) else st["id"]
+                # A single link: yt-dlp checks the archive before looking the video up, so the id is on the line.
+                # In a playlist it's the song's title, and the last id seen belongs to another song.
+                said = m.group(1)
+                vid = said if VIDEO_ID.match(said) else None if known_only else st["id"]
                 note = "Downloaded before (in downloaded.txt)"
-                if not self._song(lambda x: x["video"] == vid, state="archived", note=note):
+                waiting = ("queued", "found")   # never relabel a song that's downloading or done
+                hit = self._song(lambda x: x["state"] in waiting and (x["video"] == vid if vid else x["title"].lower() == said.lower()),
+                                 state="archived", note=note)
+                if not hit and not known_only:
                     self._add_song(title=m.group(1) if vid != m.group(1) else f"YouTube video {vid}", artist="",
                                    video=vid, state="archived", note=note)
                 st["n"] = st["n"] or 1
@@ -367,7 +382,7 @@ class DownloadRun:
                 # A line naming no video is about the song in progress: never flip one that already finished
                 unfinished = ("queued", "found", "downloading")
                 if not self._song(lambda x: x["video"] == vid and (m.group(1) or x["state"] in unfinished), state="failed", note=why) \
-                        and m.group(1):
+                        and m.group(1) and not known_only:
                     self._add_song(title=vid, artist="", video=vid, state="failed", note=why)
                 return f"  Failed: {why}"
             return None
@@ -459,7 +474,18 @@ class DownloadRun:
             s = gui.load_settings()
             run_cfg = str(gui.write_run_config(s))
             gui.App.start_runlog(f"New window: {job['label']}")
-            preset, targets = None, list(job.get("urls") or [])
+            preset, plists, targets = None, None, list(job.get("urls") or [])
+            if job["kind"] == "playlists":
+                plan = playlistrun.check(self, job)
+                plists, targets = plan["plists"], plan["targets"]
+                if not targets and not gui.raw_songs():   # like the classic window: nothing to download or tag
+                    for k in ("download", "clean", "tag", "albums", "genres"):
+                        self._step(k, "skipped")
+                    if s["playlist_files"] and plists:
+                        playlistrun.write_files(self, s, plists)
+                    result = "done"
+                    self._set(summary="Up to date: no new songs")
+                    return
             if job["kind"] == "album":
                 get = self._one_track_per_video(self._find(job), job["tracks"])
                 targets = [f"https://music.youtube.com/watch?v={v}" for _, v in get]
@@ -472,7 +498,7 @@ class DownloadRun:
                     "disc": t[i].get("disc"), "n": t[i].get("n")} for i, v in get if t[i].get("recording_id")]}
             yt = {"songs": 0, "blocked": False, "dead": 0}
             if targets:
-                yt = self._download(targets, s)
+                yt = self._download(targets, s, known_only=job["kind"] == "playlists")
                 if yt["blocked"]:
                     self._log("  YouTube is refusing downloads right now, so downloading stopped. "
                               "The songs that did download still get tagged.")
@@ -483,6 +509,8 @@ class DownloadRun:
             # Always, like the classic window, even with nothing new: prunelib forgets deleted songs
             # and fillgenres backfills Last.fm tags for older songs on every run.
             tagged = self._tag(s, run_cfg, preset)
+            if plists and s["playlist_files"]:
+                playlistrun.write_files(self, s, plists)
             gui.clean_raw()
             with self._lock:
                 for x in self._state["songs"]:
@@ -506,6 +534,15 @@ class DownloadRun:
                         x["state"] = "stopped"
                     elif x["state"] == "waiting":   # never got to it
                         x["state"] = "notrun"
+
+
+def _first_step(key: str, name: str, job: dict, s: dict) -> dict:
+    """A step as a job starts: "Find" is "Check" for playlists, links don't search, and only
+    playlist updates write playlist files (when Preferences say so)."""
+    playlists = job["kind"] == "playlists"
+    skipped = (key == "find" and job["kind"] == "links") or (key == "lists" and not (playlists and s.get("playlist_files")))
+    return {"key": key, "name": "Check" if key == "find" and playlists else name,
+            "state": "skipped" if skipped else "waiting", "done": 0, "total": 0}
 
 
 def _progress(steps: list[dict]) -> float:

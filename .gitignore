@@ -39,3 +39,4 @@ dev/
 pipeline/cache/
 pipeline/findtracks-run.json
 pipeline/search-run.json
+pipeline/app-prefs.json

@@ -18,12 +18,18 @@ Open the folder and double-click phoenixmp3.
 
 ## Using it
 
-Paste a link in the box at the top, hit Preview if you want to see what's in it, then
-hit Download. Your songs go into the downloadswithmeta folder.
+Go to Get Music and search for an album, song or artist, or paste a YouTube link.
+Pick the album (and the edition, if there's more than one), tick the songs you want and
+hit Download. Click an artist's name to see their profile with all their albums. You can
+watch it work in Activity. Your songs go into the downloadswithmeta folder.
 
-If there are playlists you keep adding songs to, click "Add or remove My Playlists",
-put one playlist link per line in the file that opens, and save it. After that,
-"Update My Playlists" will check that persistant list for new songs that have been added to those playlists and downlaods them.
+If there are playlists you keep adding songs to, add them in My Playlists. After that,
+Update checks those playlists for new songs that have been added and downloads them.
+
+Preferences has the format (AAC or MP3), where songs go and the rest of the settings.
+The new window needs Microsoft Edge WebView2, which comes with Windows 10 and 11. If
+it's missing, the old window opens instead. You can always get the old one with the
+Classic Window button, or by starting phoenixmp3 with --classic.
 
 YouTube changes stuff every now and then, which breaks downloading.
 

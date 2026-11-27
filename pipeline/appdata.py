@@ -59,6 +59,11 @@ def open_db() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{(PIPELINE / 'library.db').as_posix()}?mode=ro", uri=True)
 
 
+def has_library() -> bool:
+    """beets makes library.db on the first download; a fresh install has none yet."""
+    return (PIPELINE / "library.db").exists()
+
+
 def as_text(value) -> str:
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else (value or "")
 
@@ -92,19 +97,10 @@ def cover_for(path: Path) -> str | None:
 
 
 def read_playlists() -> list[dict]:
-    playlists, label = [], None
-    try:
-        lines = (MUSIC / "playlists.txt").read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return []
-    for line in map(str.strip, lines):
-        if line.startswith("#"):
-            text = line.lstrip("# ").strip()
-            label = text if text and len(text) < 40 and "http" not in text and "playlist" not in text.lower() else label
-        elif line.startswith("http"):
-            playlists.append({"name": label or f"Playlist {len(playlists) + 1}"})
-            label = None
-    return playlists
+    """My Playlists: [{"name", "url"}] from playlists.txt (myplaylists.py reads and edits it)."""
+    import myplaylists
+
+    return myplaylists.read()
 
 
 def read_genre_list() -> list[str]:
@@ -125,9 +121,11 @@ def library() -> dict:
 def _library() -> dict:
     settings = load_settings()
     out_dir = output_dir(settings)
-    with open_db() as db:
-        rows = db.execute("select id, title, artist, albumartist, album, year, genres, length, added, track, path, "
-                          "mb_artistid from items order by added, id").fetchall()
+    rows = []
+    if has_library():
+        with open_db() as db:
+            rows = db.execute("select id, title, artist, albumartist, album, year, genres, length, added, track, path, "
+                              "mb_artistid from items order by added, id").fetchall()
     songs, paths, groups = [], [], defaultdict(list)
     for rid, title, artist, aa, album, year, genres, length, added, track, path, aid in rows:
         p = Path(as_text(path))
@@ -159,6 +157,8 @@ def _library() -> dict:
 
 def song_tags() -> dict[int, set[str]]:
     """Per song id, every Last.fm tag kept by fillgenres plus the song's own genres."""
+    if not has_library():
+        return {}
     with open_db() as db:
         rows = db.execute("select id, genres from items").fetchall()
         attrs = db.execute("select entity_id, key, value from item_attributes where key in (%s)"

@@ -43,9 +43,11 @@ try:
     import webview  # noqa: E402  (needs libs on sys.path)
 
     import appdata  # noqa: E402
+    import appsettings  # noqa: E402
     import downloadrun  # noqa: E402
     import genrerules  # noqa: E402
     import musicinfo  # noqa: E402
+    import myplaylists  # noqa: E402
 except Exception:
     # pythonw has no console: without this a broken install would just show nothing at all
     log.exception("the new window's parts didn't load; opening the classic window")
@@ -74,7 +76,8 @@ class Api:
             return _logged("saving genre settings", genrerules.save, rules, self._refile, refile is True)
 
     def start_download(self, job: dict) -> dict:
-        """job: {"kind": "links", "urls": [...]} or {"kind": "album", "release_id", "picks": [...]}."""
+        """job: {"kind": "links", "urls": [...]}, {"kind": "album", "release_id", "picks": [...]} or
+        {"kind": "playlists", "urls": [...]}."""
         checked = _logged("checking a download", downloadrun.parse_job, job)   # may ask MusicBrainz: not under the lock
         with self._busy:
             if self._refile.running():
@@ -86,6 +89,54 @@ class Api:
 
     def stop_download(self) -> bool:
         return self._downloads.stop()
+
+    def refile_library(self) -> None:
+        """Re-file every song's genre with the settings in use (Preferences > Re-file my library)."""
+        with self._busy:
+            if self._downloads.running():
+                raise ValueError("a download is running; re-file when it's finished")
+            if self._refile.running():
+                raise ValueError("genres are already being re-filed")
+            _logged("starting a re-file", self._refile.start)
+
+    # ---------- Preferences ----------
+
+    def get_settings(self) -> dict:
+        return _logged("reading settings", appsettings.get)
+
+    def _not_downloading(self) -> None:
+        # Like the classic window, which locks Settings while it works: the page would show
+        # settings the running download isn't using.
+        if self._downloads.running():
+            raise ValueError("a download is running; change settings when it's finished")
+
+    def save_settings(self, changes: dict) -> dict:
+        self._not_downloading()
+        return _logged("saving settings", appsettings.save, changes)
+
+    def set_theme(self, theme: str) -> dict:
+        return _logged("saving the theme", appsettings.set_theme, theme)
+
+    def choose_folder(self) -> dict | None:
+        """Ask for the music folder with Windows' folder picker; None if cancelled."""
+        self._not_downloading()
+        start = appsettings.get()["folder"]
+        picked = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER, directory=start)
+        if not picked:
+            return None
+        return _logged("changing the music folder", appsettings.set_folder, picked[0])
+
+    # ---------- My Playlists ----------
+
+    def add_playlist(self, url: str, name: str) -> list:
+        return _logged("adding a playlist", myplaylists.add, url, name)
+
+    def remove_playlist(self, url: str) -> list:
+        return _logged("removing a playlist", myplaylists.remove, url)
+
+    def check_playlist(self, url: str) -> dict:
+        """New songs in one saved playlist (yt-dlp lists it; nothing downloads)."""
+        return _logged("checking a playlist", myplaylists.check, url)
 
     def refile_status(self) -> dict:
         return self._refile.status()
