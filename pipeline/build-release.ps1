@@ -15,7 +15,7 @@ $Pipeline = $PSScriptRoot
 $Root     = Split-Path -Parent $Pipeline
 $Py       = Join-Path $Pipeline "python\python.exe"
 
-$AppName = (Select-String -Path (Join-Path $Pipeline "gui.pyw") -Pattern '^APP_NAME\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+$AppName = (Select-String -Path (Join-Path $Pipeline "core.py") -Pattern '^APP_NAME\s*=\s*"(.+)"').Matches[0].Groups[1].Value
 $Safe    = ($AppName -replace '[^\w\- ]', '').Trim()
 $ZipName = ($Safe -replace '\s+', '-') + "-v$Version.zip"
 Write-Host "Building $AppName v$Version" -ForegroundColor Cyan
@@ -40,11 +40,11 @@ Copy-Item $Exe $Stage
 Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "pipeline\READ ME.txt")
 
 # Only these files from pipeline\, so nothing personal gets copied.
-$Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.py",
+$Code = "core.py", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.py",
         "writeplaylists.py", "findcopy.py", "fixartists.py", "fillgenres.py", "genres.txt",
         "mbsearch.py", "findtracks.py", "presettags.py", "make_notices.py", "get-music.ps1", "config.yaml",
         "icon.ico", "README.md",
-        # the new window (app.pyw) and its helpers
+        # the app window (app.pyw) and its helpers
         "app.pyw", "appdata.py", "appsettings.py", "installdir.py", "genrerules.py", "musicinfo.py", "downloadrun.py",
         "myplaylists.py", "playlistrun.py"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }

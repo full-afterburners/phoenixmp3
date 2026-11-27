@@ -75,7 +75,7 @@ try {
   check(`clicking ${g} in the panel selects it`, !!g && await waitFor(`(document.querySelector('.gpanel h3')?.textContent || '').toLowerCase() === ${JSON.stringify((g || "").toLowerCase())}`));
   check("no stray 'null' text in the panel", await js(`!/\\bnull\\b/.test(document.querySelector('.gpanel').innerText)`));
   check("no Mockup tag in the app", await js(`!document.querySelector('.mock-tag')`));
-  check("Classic Window button is there, wired to Python", await js(`!!document.getElementById('classicBtn') && typeof window.pywebview.api.open_classic === 'function'`));
+  check("Music Folder is in the sidebar, wired to Python", await js(`!!document.getElementById('openFolder') && typeof window.pywebview.api.open_music_folder === 'function'`));
   check("its albums from your library show",await js(`document.querySelectorAll('.gpanel .tile').length > 0`));
   check("popular albums arrive from Last.fm", await waitFor(`document.querySelectorAll('.gpanel .pop').length > 0 || /Couldn't reach|no top albums/.test(document.querySelector('.gpanel').innerText)`, 20000),
     (await js(`document.querySelectorAll('.gpanel .pop').length`)) + " albums");

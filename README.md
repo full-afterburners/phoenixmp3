@@ -29,9 +29,8 @@ If there are playlists you keep adding songs to, add them in My Playlists. After
 Update checks those playlists for new songs that have been added and downloads them.
 
 Preferences has the format (AAC or MP3), where songs go and the rest of the settings.
-The new window needs Microsoft Edge WebView2, which comes with Windows 10 and 11. If
-it's missing, the old window opens instead. You can always get the old one with the
-Classic Window button, or by starting phoenixmp3 with --classic.
+phoenixmp3 needs Microsoft Edge WebView2, which comes with Windows 11 and with Edge on
+Windows 10. If it's missing, phoenixmp3 says so and offers Microsoft's download page.
 
 YouTube changes stuff every now and then, which breaks downloading.
 

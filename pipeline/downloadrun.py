@@ -10,8 +10,8 @@
 # squareart, cleantitles, (presettags), prunelib, beets import, fixartists, fillalbums,
 # fillgenres, then beets write when ReplayGain is on. The classic window's helpers
 # (settings, run-config, download archive, unavailable songs, newdownloads cleanup)
-# are imported from gui.pyw so both windows behave the same.
-# KEEP IN STEP with gui.pyw's _download_worker and get-music.ps1 when steps change.
+# come from core.py.
+# KEEP IN STEP with get-music.ps1 (the command line version) when steps change.
 import collections
 import datetime
 import json
@@ -20,13 +20,13 @@ import subprocess
 import threading
 from pathlib import Path
 
-import gui
+import core
 import musicinfo
 import myplaylists
 import playlistrun
 
-PIPELINE = gui.PIPELINE
-RAW = gui.RAW
+PIPELINE = core.PIPELINE
+RAW = core.RAW
 FIND_FILE = PIPELINE / "findtracks-run.json"
 PRESET_FILE = PIPELINE / "search-run.json"
 MAX_URLS = 20
@@ -41,7 +41,7 @@ ID_IN_NAME = re.compile(r"\[([0-9A-Za-z_-]{11})\]")
 STEPS = [("find", "Find", 0.12), ("download", "Download", 0.5), ("clean", "Clean up", 0.06),
          ("tag", "Tag", 0.14), ("albums", "Albums", 0.08), ("genres", "Genres", 0.1), ("lists", "Playlist files", 0.02)]
 
-# yt-dlp's output (same patterns as gui.pyw's _yt_filter)
+# yt-dlp's output
 ITEM_RE = re.compile(r"\[download\] Downloading item (\d+) of (\d+)")
 URL_RE = re.compile(r"Extracting URL: .*(?:v=|youtu\.be/)([0-9A-Za-z_-]{11})")
 DEST_RE = re.compile(r"\[download\] Destination: (.+)")
@@ -83,7 +83,7 @@ def parse_job(job) -> dict:
         if not isinstance(urls, list) or not 1 <= len(urls) <= MAX_URLS:
             raise ValueError("paste one YouTube link")
         urls = [u.strip() for u in urls if isinstance(u, str)]
-        if len(urls) != len(job["urls"]) or not all(gui.is_youtube_link(u) for u in urls):
+        if len(urls) != len(job["urls"]) or not all(core.is_youtube_link(u) for u in urls):
             raise ValueError("that isn't a YouTube link")
         return {"kind": "links", "urls": urls, "label": "YouTube playlist" if any("list=" in u for u in urls) else "YouTube link"}
     if job.get("kind") == "album":
@@ -163,7 +163,7 @@ class DownloadRun:
             proc = self._proc
             self._state["now"] = "Stopping…"
         if proc:
-            gui.kill_tree(proc.pid)
+            core.kill_tree(proc.pid)
         return True
 
     def unqueue(self, qid) -> bool:
@@ -188,7 +188,7 @@ class DownloadRun:
         album = job["kind"] == "album"
         songs = [{"i": i, "title": job["tracks"][i]["title"], "artist": job["tracks"][i]["artist"],
                   "video": v, "state": "found" if v else "queued", "note": ""} for i, v in sorted(job["picks"].items())] if album else []
-        steps = [_first_step(k, n, job, gui.load_settings()) for k, n, _ in STEPS]   # may raise: before changing anything
+        steps = [_first_step(k, n, job, core.load_settings()) for k, n, _ in STEPS]   # may raise: before changing anything
         self._stopping, self._cut, self._key = False, False, key
         self._state = {
             "running": True, "seq": self._state["seq"] + 1, "label": job["label"], "kind": job["kind"],
@@ -214,7 +214,7 @@ class DownloadRun:
                     self._begin(q["job"], q["key"])
                     nxt = q["job"]
                 except Exception as e:   # noqa: BLE001 - e.g. settings.json unreadable: skip that one, keep the queue going
-                    gui.runlog(f"!! couldn't start the queued download {q['job']['label']}: {type(e).__name__}: {e}\n")
+                    core.runlog(f"!! couldn't start the queued download {q['job']['label']}: {type(e).__name__}: {e}\n")
             if nxt is None:
                 st.update(running=False, result=result, now="")
                 self._key = ""
@@ -269,28 +269,28 @@ class DownloadRun:
         """Run one step; every line goes to last-run.log. on_line(line) handles it for the window."""
         self._check()
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                             errors="replace", env=gui.child_env(), creationflags=gui.NO_WINDOW, bufsize=1, cwd=PIPELINE)
+                             errors="replace", env=core.child_env(), creationflags=core.NO_WINDOW, bufsize=1, cwd=PIPELINE)
         with self._lock:
             self._proc, self._cut = p, False
             stop_now = self._stopping   # Stop pressed while this was starting: it found no process to end
         tail = collections.deque(maxlen=5)
         try:
             if stop_now:
-                gui.kill_tree(p.pid)
+                core.kill_tree(p.pid)
             for line in p.stdout:
-                gui.runlog(line)
+                core.runlog(line)
                 if line.strip():
                     tail.append(line.strip())
-                shown = (on_line or gui.App._only_problems)(line.rstrip())
+                shown = (on_line or core.only_problems)(line.rstrip())
                 if shown:
                     self._log(shown)
                 if self._cut:
-                    gui.kill_tree(p.pid)
+                    core.kill_tree(p.pid)
                     break
         except BaseException:
             # Never leave a step running unwatched: the job would look finished while
             # beets or yt-dlp still writes to the library and newdownloads.
-            gui.kill_tree(p.pid)
+            core.kill_tree(p.pid)
             raise
         finally:
             p.wait()
@@ -300,7 +300,7 @@ class DownloadRun:
         # yt-dlp exits with 1 whenever one song failed, which is reported per song
         if p.returncode and not ytdlp and not self._cut:
             name = f"beets {cmd[5]}" if cmd[1] == "-m" else Path(cmd[1]).name   # [PY, -m, beets, -c, cfg, import]
-            errs = [ln for ln in tail if gui.App._only_problems(ln) and "traceback" not in ln.lower()]
+            errs = [ln for ln in tail if core.only_problems(ln) and "traceback" not in ln.lower()]
             self._problem(f"{name} crashed: {(errs or list(tail) or [f'exit code {p.returncode}'])[-1]}")
         return p.returncode
 
@@ -311,7 +311,7 @@ class DownloadRun:
                 with self._lock:
                     step = next(s for s in self._state["steps"] if s["key"] == key)
                     step["done"] = min(step["done"] + 1, step["total"] or step["done"] + 1)
-            return gui.App._only_problems(line)
+            return core.only_problems(line)
         return on_line
 
     def _find(self, job: dict) -> list[tuple[int, str]]:
@@ -322,7 +322,7 @@ class DownloadRun:
             self._step("find", "skipped")
             return get
         self._step("find", "active", 0, len(want))
-        self._set(now=f"Finding {gui.plural(len(want), 'song')} on YouTube Music")
+        self._set(now=f"Finding {core.plural(len(want), 'song')} on YouTube Music")
         for i in want:
             self._song(lambda s, i=i: s["i"] == i, state="finding")
         FIND_FILE.write_text(json.dumps({"release": job["release"], "tracks": [job["tracks"][i] for i in want]},
@@ -335,7 +335,7 @@ class DownloadRun:
             if parts[0] == "playlist" and len(parts) > 2:
                 return f"  Found the album on YouTube Music ({parts[2]} tracks from its playlist)"
             if parts[0] not in ("found", "unsure", "none", "error") or len(parts) < 2 or not pending:
-                return gui.App._only_problems(line)
+                return core.only_problems(line)
             i = pending.pop(0)
             title = job["tracks"][i]["title"]
             with self._lock:
@@ -355,7 +355,7 @@ class DownloadRun:
             self._song(lambda s: s["i"] == i, state="searchfail", note=why)
             return f"  Couldn't search for {title} ({why})"
 
-        self._stream([gui.PY, str(PIPELINE / "findtracks.py"), str(FIND_FILE)], on_line)
+        self._stream([core.PY, str(PIPELINE / "findtracks.py"), str(FIND_FILE)], on_line)
         for i in pending:   # findtracks stopped early (crashed): those weren't searched
             self._song(lambda s, i=i: s["i"] == i, state="searchfail", note="the search stopped early")
         self._step("find", "done")
@@ -387,7 +387,7 @@ class DownloadRun:
         st = {"n": 0, "total": len(targets), "songs": 0, "refused": 0, "blocked": False, "id": None, "title": ""}
         ytlog: list[str] = []
         self._step("download", "active", 0, len(targets))
-        self._set(now=f"Starting the download of {gui.plural(len(targets), 'song')}")
+        self._set(now=f"Starting the download of {core.plural(len(targets), 'song')}")
 
         def finish_current():
             if st["id"]:
@@ -421,7 +421,7 @@ class DownloadRun:
             if m := DEST_RE.search(line):
                 path = Path(m.group(1))
                 vid = (ID_IN_NAME.search(path.name) or [None, st["id"]])[1]
-                st["id"], st["title"], st["refused"] = vid, gui.strip_id(path.stem), 0
+                st["id"], st["title"], st["refused"] = vid, core.strip_id(path.stem), 0
                 if path.suffix.lower() in (".jpg", ".webp", ".png"):
                     return None
                 st["songs"] += 1
@@ -457,36 +457,36 @@ class DownloadRun:
             return None
 
         try:
-            self._stream([gui.PY, str(gui.YTDLP), "--ffmpeg-location", str(gui.BIN), "--remote-components", "ejs:github",
+            self._stream([core.PY, str(core.YTDLP), "--ffmpeg-location", str(core.BIN), "--remote-components", "ejs:github",
                           *fmt_args, *pause_args, "--embed-thumbnail", "--embed-metadata", "--convert-thumbnails", "jpg",
                           "--parse-metadata", ":(?P<meta_genre>)",   # YouTube's category ("Music") would be the genre
-                          "--no-overwrites", "--ignore-errors", "--newline", "--download-archive", str(gui.ARCHIVE),
+                          "--no-overwrites", "--ignore-errors", "--newline", "--download-archive", str(core.ARCHIVE),
                           "-o", str(RAW / "%(title)s [%(id)s].%(ext)s"),
                           "--", *targets], on_line, ytdlp=True)   # "--": a link can never be read as an option
         except Stopped:
-            gui.record_unavailable(ytlog)   # like the classic window: songs YouTube won't serve aren't retried
+            core.record_unavailable(ytlog)   # like the classic window: songs YouTube won't serve aren't retried
             raise
         finish_current()
         self._step("download", "done", st["total"])
-        return {"songs": st["songs"], "blocked": st["blocked"], "dead": gui.record_unavailable(ytlog)}
+        return {"songs": st["songs"], "blocked": st["blocked"], "dead": core.record_unavailable(ytlog)}
 
     def _tag(self, s: dict, run_cfg: str, preset: dict | None) -> dict:
         """Everything after downloading, in the classic window's order."""
-        n_files = len(gui.raw_songs())
+        n_files = len(core.raw_songs())
         self._step("clean", "active", 0, n_files)
         self._set(now="Fixing cover art and titles")
         if s["square_art"]:
-            self._stream([gui.PY, str(PIPELINE / "squareart.py"), str(RAW), "300" if s["small_art"] else "500"],
+            self._stream([core.PY, str(PIPELINE / "squareart.py"), str(RAW), "300" if s["small_art"] else "500"],
                          self._counted("clean", ("art:",)))
-        self._stream([gui.PY, str(PIPELINE / "cleantitles.py"), str(RAW)])
+        self._stream([core.PY, str(PIPELINE / "cleantitles.py"), str(RAW)])
         if preset:
             PRESET_FILE.write_text(json.dumps(preset, ensure_ascii=False), encoding="utf-8")
-            self._stream([gui.PY, str(PIPELINE / "presettags.py"), str(PRESET_FILE), str(RAW)])
+            self._stream([core.PY, str(PIPELINE / "presettags.py"), str(PRESET_FILE), str(RAW)])
         self._step("clean", "done", n_files)
 
         self._step("tag", "active", 0, n_files)
-        self._set(now=f"Matching {gui.plural(n_files, 'song')} on MusicBrainz")
-        self._stream([gui.PY, str(PIPELINE / "prunelib.py"), run_cfg])   # forget songs deleted from the folder
+        self._set(now=f"Matching {core.plural(n_files, 'song')} on MusicBrainz")
+        self._stream([core.PY, str(PIPELINE / "prunelib.py"), run_cfg])   # forget songs deleted from the folder
         beets_log: list[str] = []
         counting = self._counted("tag", (str(RAW),))
 
@@ -494,7 +494,7 @@ class DownloadRun:
             beets_log.append(line)
             return counting(line)
 
-        beets_ok = self._stream([gui.PY, "-m", "beets", "-c", run_cfg, "import", "-q", "-s", str(RAW)], on_beets) == 0
+        beets_ok = self._stream([core.PY, "-m", "beets", "-c", run_cfg, "import", "-q", "-s", str(RAW)], on_beets) == 0
         n_asis = sum(1 for ln in beets_log if "Importing as-is" in ln)
         dupes, current = [], None   # already in the library: beets leaves the extra copy in newdownloads
         for ln in beets_log:
@@ -503,7 +503,7 @@ class DownloadRun:
             elif "already in the library" in ln and current:
                 dupes.append(current)
         for p in dupes:
-            self._log(f"  Skipped, already in your library: {gui.strip_id(p.stem)}")
+            self._log(f"  Skipped, already in your library: {core.strip_id(p.stem)}")
             vid = (ID_IN_NAME.search(p.name) or [None, None])[1]
             self._song(lambda x: x["video"] == vid and vid, state="have", note="Already in your library")
             try:
@@ -515,7 +515,7 @@ class DownloadRun:
         n_matched = max(n_files - n_asis - len(dupes), 0) if beets_ok else 0
         self._step("albums", "active", 0, n_matched)
         self._set(now="Artists, albums and years")
-        self._stream([gui.PY, str(PIPELINE / "fixartists.py"), run_cfg])
+        self._stream([core.PY, str(PIPELINE / "fixartists.py"), run_cfg])
         album_log: list[str] = []
         counting_albums = self._counted("albums", ("album:",))
 
@@ -523,16 +523,16 @@ class DownloadRun:
             album_log.append(line)
             return counting_albums(line)
 
-        self._stream([gui.PY, str(PIPELINE / "fillalbums.py"), run_cfg], on_albums)
+        self._stream([core.PY, str(PIPELINE / "fillalbums.py"), run_cfg], on_albums)
         self._step("albums", "done")
 
         n_new = max(n_files - len(dupes), 0)
         self._step("genres", "active", 0, n_new)
         self._set(now="Genres from Last.fm")
-        self._stream([gui.PY, str(PIPELINE / "fillgenres.py"), run_cfg], self._counted("genres", ("genre:",)))
+        self._stream([core.PY, str(PIPELINE / "fillgenres.py"), run_cfg], self._counted("genres", ("genre:",)))
         if s["replaygain"]:
             # beets doesn't always write the loudness values into files it couldn't match
-            self._stream([gui.PY, "-m", "beets", "-c", run_cfg, "write"])
+            self._stream([core.PY, "-m", "beets", "-c", run_cfg, "write"])
         self._step("genres", "done")
         return {"files": n_files, "dupes": len(dupes), "asis": n_asis, "matched": n_matched,
                 "albums": sum(1 for ln in album_log if 'album "' in ln)}
@@ -540,17 +540,17 @@ class DownloadRun:
     def _worker(self, job: dict, queued: bool) -> None:
         result = "failed"
         try:
-            s = gui.load_settings()
-            run_cfg = str(gui.write_run_config(s))
+            s = core.load_settings()
+            run_cfg = str(core.write_run_config(s))
             if queued:   # one log for the whole queue: don't wipe the download before this one
-                gui.runlog(f"\n{datetime.datetime.now():%Y-%m-%d %H:%M}  Next in the queue: {job['label']}")
+                core.runlog(f"\n{datetime.datetime.now():%Y-%m-%d %H:%M}  Next in the queue: {job['label']}")
             else:
-                gui.App.start_runlog(f"New window: {job['label']}")
+                core.start_runlog(f"New window: {job['label']}")
             preset, plists, targets = None, None, list(job.get("urls") or [])
             if job["kind"] == "playlists":
                 plan = playlistrun.check(self, job)
                 plists, targets = plan["plists"], plan["targets"]
-                if not targets and not gui.raw_songs():   # like the classic window: nothing to download or tag
+                if not targets and not core.raw_songs():   # like the classic window: nothing to download or tag
                     for k in ("download", "clean", "tag", "albums", "genres"):
                         self._step(k, "skipped")
                     if s["playlist_files"] and plists:
@@ -576,14 +576,14 @@ class DownloadRun:
                               "The songs that did download still get tagged.")
             else:
                 self._step("download", "skipped")
-            gui.clean_raw()
+            core.clean_raw()
             self._check()
             # Always, like the classic window, even with nothing new: prunelib forgets deleted songs
             # and fillgenres backfills Last.fm tags for older songs on every run.
             tagged = self._tag(s, run_cfg, preset)
             if plists and s["playlist_files"]:
                 playlistrun.write_files(self, s, plists)
-            gui.clean_raw()
+            core.clean_raw()
             with self._lock:
                 for x in self._state["songs"]:
                     if x["state"] == "downloaded":
@@ -592,10 +592,10 @@ class DownloadRun:
             self._set(summary=_summary(yt, tagged, self.status()["songs"]))
         except Stopped:
             result = "stopped"
-            gui.clean_raw()   # half-finished files; finished ones stay and are tagged next time
+            core.clean_raw()   # half-finished files; finished ones stay and are tagged next time
             self._set(summary="Stopped. Anything already downloaded is tagged on the next download.")
         except Exception as e:   # noqa: BLE001 - shown in the window and the log; the run must end cleanly
-            gui.runlog(f"!! new window download crashed: {type(e).__name__}: {e}\n")
+            core.runlog(f"!! new window download crashed: {type(e).__name__}: {e}\n")
             self._problem(f"{type(e).__name__}: {e}")
             self._set(summary="The download stopped with a problem.")
         finally:
@@ -625,7 +625,7 @@ def _progress(steps: list[dict]) -> float:
 
 
 def _summary(yt: dict, tagged: dict | None, songs: list[dict]) -> str:
-    parts = [f"{gui.plural(yt['songs'], 'song')} downloaded"]
+    parts = [f"{core.plural(yt['songs'], 'song')} downloaded"]
     count = collections.Counter(x["state"] for x in songs)
     if yt["blocked"]:
         parts.append("stopped early because YouTube is blocking downloads")

@@ -24,7 +24,7 @@ SOURCES = ("track", "album", "artist")
 FAMILIES = ("history", "sound")
 MAX_NAME = 60
 CREATE_NO_WINDOW = 0x08000000
-ERROR_LINE = re.compile(r"^\w+(Error|Exception): ")   # a Python error, like gui.pyw's _only_problems()
+ERROR_LINE = re.compile(r"^\w+(Error|Exception): ")   # a Python error, like core.only_problems()
 
 
 class RulesError(ValueError):
@@ -32,7 +32,7 @@ class RulesError(ValueError):
 
 
 def child_env() -> dict:
-    """The environment every pipeline step gets (same as child_env in gui.pyw)."""
+    """The environment every pipeline step gets (same as child_env in core.py)."""
     env = os.environ.copy()
     env.update(PYTHONPATH=str(PIPELINE / "libs"), BEETSDIR=str(PIPELINE), FPCALC=str(PIPELINE / "bin" / "fpcalc.exe"),
                PYTHONNOUSERSITE="1", PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PIP_USER="0")
@@ -156,8 +156,8 @@ class Refile:
                 raise RuntimeError("a re-file is already running")
             # The run-config carries the music folder from settings.json (config.yaml only has the
             # default one), so the re-file writes the files where they really are, like a download does
-            import gui
-            run_cfg = str(gui.write_run_config(gui.load_settings()))
+            import core
+            run_cfg = str(core.write_run_config(core.load_settings()))
             # Popen first: if it fails, the job must not be left marked as running forever
             self._proc = subprocess.Popen([str(PYTHON), str(PIPELINE / "fillgenres.py"), run_cfg, "--refile"], cwd=PIPELINE,
                                           env=child_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -175,7 +175,7 @@ class Refile:
                     self._state["kept"] += 1
                 elif song_line and not line.startswith("genre: couldn't"):
                     self._state["done"] += 1
-                # problems only, worded the way gui.pyw's _only_problems() looks for them (not song titles)
+                # problems only, worded the way core.only_problems() looks for them (not song titles)
                 if line.startswith(("genre: couldn't", "lookup failed", "Traceback")) or ERROR_LINE.match(line):
                     self._state["errors"] = (self._state["errors"] + [line])[-5:]
         code = proc.wait()

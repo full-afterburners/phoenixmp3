@@ -617,11 +617,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   const load = name => IN_APP ? apiReady.then(() => window.pywebview.api.load(name)) : fetchJSON(name + ".json");
   const errText = e => (e && (e.message || e.toString())) || "unknown error";
   let DEMO = null;
-  // Playlists and settings are still only in the classic window (gui.pyw), so it stays a click away.
-  if (IN_APP) document.querySelector(".mock-tag")?.replaceWith(h("button", { class: "btn small", type: "button", id: "classicBtn",
-    title: "The classic phoenixmp3 window, for playlists and settings until this one has them",
-    onclick: () => apiReady.then(() => window.pywebview.api.open_classic()).then(() => toast("Opening the classic window…"), e => toast(`Couldn't open it (${errText(e)})`)) },
-    "Classic Window"));
+  if (IN_APP) document.querySelector(".mock-tag")?.remove();   // "Mockup" is only for the claude.ai copy
   let theme = "dark";
   try { theme = localStorage.getItem("phx-theme") || "dark"; } catch (e) {}
   const applyTheme = t => { if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; };

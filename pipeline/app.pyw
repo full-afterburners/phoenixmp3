@@ -1,5 +1,4 @@
-# The new phoenixmp3 window (work in progress; gui.pyw is still the app until this one
-# can do everything). It's a web page (ui/index.html) shown in a native window through
+# The phoenixmp3 window. It's a web page (ui/index.html) shown in a native window through
 # pywebview, which uses Microsoft Edge WebView2 (built into Windows 10/11). The page asks
 # Python for data through window.pywebview.api (the Api class below); appdata.py does
 # the reading, read-only. The page is served from a private 127.0.0.1 port.
@@ -21,7 +20,7 @@ UI = PIPELINE / "ui"
 LOG = PIPELINE / "app.log"
 UI_PORT = 47613   # arbitrary, out of the common ranges
 
-# Same environment the pipeline steps get (see child_env in gui.pyw), set before beets is imported.
+# Same environment the pipeline steps get (see child_env in core.py), set before beets is imported.
 sys.path[:0] = [str(LIBS), str(PIPELINE)]
 os.environ["BEETSDIR"] = str(PIPELINE)
 os.environ["FPCALC"] = str(BIN / "fpcalc.exe")
@@ -35,8 +34,18 @@ logging.basicConfig(filename=LOG, filemode="w", level=logging.INFO, encoding="ut
 log = logging.getLogger("app")
 
 
-def open_classic() -> None:
-    subprocess.Popen([str(PIPELINE / "python" / "pythonw.exe"), str(PIPELINE / "gui.pyw")], cwd=str(PIPELINE.parent))
+WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
+MB_OK, MB_YESNO, MB_ICONERROR, IDYES = 0x0, 0x4, 0x10, 6
+
+
+def tell(text: str, ask: bool = False) -> bool:
+    """A plain Windows message box: pythonw has no console, so it's the only way to say what went wrong.
+    With ask=True it has Yes/No and returns whether Yes was picked."""
+    try:
+        import ctypes
+        return ctypes.windll.user32.MessageBoxW(None, text, "phoenixmp3", (MB_YESNO if ask else MB_OK) | MB_ICONERROR) == IDYES
+    except (AttributeError, OSError):
+        return False
 
 
 try:
@@ -51,8 +60,9 @@ try:
     import myplaylists  # noqa: E402
 except Exception:
     # pythonw has no console: without this a broken install would just show nothing at all
-    log.exception("the new window's parts didn't load; opening the classic window")
-    open_classic()
+    log.exception("the window's parts didn't load")
+    tell("phoenixmp3 couldn't start: part of it is missing or damaged. Download it again from the "
+         "Releases page. (Details are in pipeline\\app.log.)")
     sys.exit(1)
 
 
@@ -186,10 +196,6 @@ class Api:
             log.exception("loading %s failed", name)
             raise
 
-    def open_classic(self) -> None:
-        """Open the old window (gui.pyw), which still does the downloading for now."""
-        open_classic()
-
     def genre_albums(self, tag: str) -> list:
         if not isinstance(tag, str) or not tag.strip() or len(tag) > 100:
             raise ValueError("bad genre name")
@@ -273,9 +279,13 @@ def main() -> None:
         webview.start(gui="edgechromium", private_mode=False, storage_path=str(PIPELINE / "cache" / "webview"),
                       icon=str(PIPELINE / "icon.ico"))
     except Exception:
-        # Most likely no WebView2 on this PC: open the classic window instead of nothing.
-        log.exception("the new window couldn't start; opening the classic one")
-        open_classic()
+        # Almost always: no Microsoft Edge WebView2 on this PC (Windows 11 has it; Windows 10 gets it
+        # with Edge). Say so and offer the download instead of showing nothing.
+        log.exception("the window couldn't start")
+        if tell("phoenixmp3 needs Microsoft Edge WebView2, which this PC doesn't seem to have.\n\n"
+                "Open Microsoft's download page now? (Get the \"Evergreen Bootstrapper\", run it, "
+                "then start phoenixmp3 again.)", ask=True):
+            os.startfile(WEBVIEW2_URL)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ import os
 import threading
 from pathlib import Path
 
-import gui
+import core
 import installdir
 
 TITLES = installdir.PIPELINE / "cache" / "playlist-titles.json"   # YouTube's names, for unnamed playlists
@@ -86,7 +86,7 @@ def _check_url(url) -> str:
     # otherwise write extra lines into playlists.txt
     if not url.isprintable() or any(c.isspace() or c in "\"'<>" for c in url) or url.startswith("#"):
         raise ValueError("that isn't a YouTube or YouTube Music playlist link")
-    if not gui.is_youtube_link(url) or "list=" not in url:
+    if not core.is_youtube_link(url) or "list=" not in url:
         raise ValueError("that isn't a YouTube or YouTube Music playlist link")
     return url
 
@@ -98,7 +98,7 @@ def add(url, name) -> list[dict]:
         # the same rules as reading names back, so the name isn't lost on the next read
         raise ValueError(f"names need to be under {MAX_NAME} characters, without “http” or “playlist”")
     with _lock:
-        lines = _lines() or gui.PLAYLISTS_TEMPLATE.splitlines()
+        lines = _lines() or core.PLAYLISTS_TEMPLATE.splitlines()
         if any(line.strip().strip('"') == url for line in lines):
             raise ValueError("that playlist is already in My Playlists")
         while lines and not lines[-1].strip():
@@ -132,10 +132,10 @@ def check(url) -> dict:
     """What Update would get from one saved playlist: new songs, and songs YouTube won't serve."""
     if url not in {p["url"] for p in read()}:
         raise ValueError("that playlist isn't in My Playlists")
-    data = gui.App._lookup(url)   # yt-dlp, no download; raises with yt-dlp's reason
+    data = core.lookup(url)   # yt-dlp, no download; raises with yt-dlp's reason
     _remember_title(url, (data.get("title") or "").strip()[:MAX_NAME * 2])
     entries = [e for e in (data.get("entries") or [data]) if e and e.get("id")]
-    have, dead, rep = gui.archived_ids(), gui.unavailable_ids(), gui.replacements()
+    have, dead, rep = core.archived_ids(), core.unavailable_ids(), core.replacements()
     fresh = [e for e in entries if e["id"] not in have | dead]
     gone = [e for e in entries if e["id"] in dead]
     return {

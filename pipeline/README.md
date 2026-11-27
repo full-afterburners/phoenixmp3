@@ -65,10 +65,11 @@ YouTube refuses 3 songs in a row the app stops downloading and tags what it got.
 Stop (or closing the window) ends a run, and anything that finished downloading
 gets tagged on the next run.
 
-## The new window (work in progress)
+## The app window
 
-`app.pyw` is the start of a new Apple Music-style window. `gui.pyw` stays the
-app until the new one can do everything. Run it with `.\python\pythonw.exe app.pyw`.
+`app.pyw` is the app: an Apple Music-style window. Run it with
+`.\python\pythonw.exe app.pyw`. (The old tkinter window, `gui.pyw`, was removed;
+what the steps share with the window is in `core.py`.)
 
 - It's a web page, `ui/index.html`, shown in a native window by pywebview
   (in `libs/`), which uses Microsoft Edge WebView2. WebView2 is built into
@@ -95,25 +96,24 @@ app until the new one can do everything. Run it with `.\python\pythonw.exe app.p
   the background, with progress in Activity and the status capsule. Album
   songs are found with `findtracks.py` first; "found" ones download, "unsure"
   ones wait for "Download Anyway", and `presettags.py` writes the picked album
-  and recording into the files after `cleantitles.py`. The other steps are the
-  classic window's, in the same order, using its helpers (imported from
-  `gui.pyw`). A download started while another runs waits in a queue (kept in
+  and recording into the files after `cleantitles.py`. The other steps run in the
+  order above, with the shared helpers in `core.py`. A download started while another runs waits in a queue (kept in
   memory only, so closing the app forgets it); Activity lists it under Up Next.
   Stop ends the running one and the next starts; Stop All also empties the
   queue. A download and a genre re-file never run at the same time.
 - My Playlists (`myplaylists.py`) reads and edits `playlists.txt`, keeping
   its comments; a "# Name" line right above a link names it. Update runs
-  the classic window's Update My Playlists as a download job
+  Update My Playlists as a download job
   (`playlistrun.py`: list the playlists, look for another copy of songs
   YouTube won't serve, download, tag, write .m3u8 files when that's on).
-- Preferences (`appsettings.py`) go through `gui.pyw`'s own
-  `load_settings()`/`save_settings()`, so both windows share settings.json.
+- Preferences (`appsettings.py`) go through `core.py`'s
+  `load_settings()`/`save_settings()` into settings.json.
   The theme is kept in `app-prefs.json`.
 - The page uses Inter from `ui/fonts/` (SIL Open Font License), so the app
   makes no request to Google Fonts. A fresh install with no `library.db` yet
   opens to an empty library.
-- `phoenixmp3.exe` opens this window. `--classic` or the Classic Window
-  button opens `gui.pyw`, and so does a PC without WebView2.
+- `phoenixmp3.exe` opens this window. On a PC without WebView2 it says so and
+  offers Microsoft's download page.
 
 The same page also runs outside the app as a design mockup. Without
 `?desktop` it loads `data.json`/`genres.json` snapshots and `demo.json`
@@ -139,7 +139,7 @@ In `pipeline\`:
 - `playlists.txt` is the list of saved playlist links (it used to sit next to
   the exe and is moved here once). `READ ME.txt` and `THIRD-PARTY-NOTICES.txt`
   are here too in a release; Preferences > About opens them.
-- `gui.pyw` is the app.
+- `app.pyw` is the app; `core.py` has what its parts share.
 - `get-music.ps1` is a command line version that always uses the default settings.
 - `config.yaml` is the beets config. The app writes `run-config.yaml` from its
   settings on every run and passes it to beets on top of this.

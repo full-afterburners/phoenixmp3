@@ -1,17 +1,15 @@
-# Preferences for the new app window (app.pyw). Download settings live in settings.json
-# and go through the classic window's own load_settings()/save_settings(), so both
-# windows always agree (gui.pyw keeps only the keys it knows, with its defaults).
-# Settings only the new window has (the theme) go in app-prefs.json, which the classic
-# window never rewrites. Both are personal files: gitignored and kept out of the release.
+# Preferences for the app window (app.pyw). Download settings live in settings.json
+# and go through core.py's load_settings()/save_settings() (which keep only the keys
+# they know, with their defaults). The theme goes in app-prefs.json. Both are personal files: gitignored and kept out of the release.
 import functools
 import json
 import os
 import threading
 from pathlib import Path
 
-import gui
+import core
 
-APP_PREFS = gui.PIPELINE / "app-prefs.json"
+APP_PREFS = core.PIPELINE / "app-prefs.json"
 THEMES = ("dark", "light", "system")
 CHOICES = {"format": ("aac", "mp3"), "layout": ("flat", "folders")}
 SWITCHES = ("square_art", "small_art", "playlist_files", "replaygain")
@@ -36,8 +34,8 @@ def _app_prefs() -> dict:
 
 
 def get() -> dict:
-    s = gui.load_settings()
-    return {"settings": s, "folder": str(gui.out_dir(s)), "default_folder": not s["output_dir"],
+    s = core.load_settings()
+    return {"settings": s, "folder": str(core.out_dir(s)), "default_folder": not s["output_dir"],
             # None until the window saves one (it then sends the theme it remembered itself)
             "theme": _app_prefs().get("theme") if _app_prefs().get("theme") in THEMES else None}
 
@@ -47,7 +45,7 @@ def save(changes) -> dict:
     """Checked changes to settings.json; anything not sent stays as it was."""
     if not isinstance(changes, dict) or not changes:
         raise ValueError("nothing to save")
-    s = gui.load_settings()
+    s = core.load_settings()
     for key, value in changes.items():
         if key in CHOICES and value in CHOICES[key]:
             s[key] = value
@@ -59,7 +57,7 @@ def save(changes) -> dict:
             s[key] = ""
         else:
             raise ValueError(f"can't set {key} to {value!r}")
-    gui.save_settings(s)
+    core.save_settings(s)
     return get()
 
 
@@ -69,9 +67,9 @@ def set_folder(path: str) -> dict:
     p = Path(path)
     if not p.is_absolute() or not p.is_dir():
         raise ValueError("that folder doesn't exist")
-    s = gui.load_settings()
-    s["output_dir"] = gui.store_dir(p)
-    gui.save_settings(s)
+    s = core.load_settings()
+    s["output_dir"] = core.store_dir(p)
+    core.save_settings(s)
     return get()
 
 
