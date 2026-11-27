@@ -381,23 +381,21 @@ a.btn.primary { color: var(--accent-ink); }
 .org li:first-child::after { border-radius: 6px 0 0 0; }
 .org ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 16px; border-left: 1.5px solid var(--line); }
 .org > li::before, .org > li::after { display: none; }
-.ocard { position: relative; width: 112px; border-radius: 9px; border: 1.5px dashed var(--line); background: var(--sunk); color: var(--ink-2);
-  padding: 6px 8px 7px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+/* every box is as wide as the longest single word among the genre names (--ow, set by orgChart); longer names wrap */
+.ocard { position: relative; width: var(--ow, 112px); border-radius: 9px; border: 1.5px dashed var(--line); background: var(--sunk); color: var(--ink-2);
+  padding: 5px 7px 6px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
 .ocard:hover { border-color: var(--ink-3); color: var(--ink); }
 .ocard .nm { font-weight: 700; font-size: 12.5px; line-height: 1.15; overflow-wrap: anywhere; letter-spacing: -0.01em; }
 .ocard .ct { font-size: 11px; font-variant-numeric: tabular-nums; }
-.ocard .obar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
-.ocard .obar i { display: block; height: 100%; background: var(--ink-3); }
 .ocard .mv { font-size: 10.5px; font-weight: 600; color: var(--accent); }
 .ocard.on { border: 1.5px solid var(--ok); background: var(--ok-soft); color: var(--ink); }
 .ocard.on .ct { color: var(--ink-2); }
-.ocard.on .obar i { background: var(--ok); }
 .ocard.sel { outline: 2.5px solid var(--accent); outline-offset: 2px; }
 .ocard.disc { border-style: solid; background: var(--raised); color: var(--ink); }
 .ocard.disc .ct { color: var(--ink-2); }
 .ocard.root { width: 140px; text-align: center; align-items: center; background: var(--ink); color: var(--bg); border: 1.5px solid var(--ink); cursor: default; }
 .ocard.root .ct { color: var(--bg); opacity: .75; }
-.ocard.more { width: auto; min-width: 84px; border-style: dotted; align-items: center; text-align: center; }
+.ocard.more { border-style: dotted; align-items: center; text-align: center; }
 .ocard.drop-here { outline: 3px solid var(--accent); outline-offset: 2px; }
 .odrawer { position: relative; border: 1.5px dotted var(--ink-3); border-radius: 9px; background: var(--pane); padding: 0 6px 6px; }
 .odrawer-top { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 11px; color: var(--ink-2); }
@@ -1100,6 +1098,21 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   window.addEventListener("pointerup", endDrag);
   window.addEventListener("pointercancel", endDrag);
 
+  // One width for every genre box: the longest single word in any genre name (multi-word names wrap
+  // onto more lines), or the count line under it, whichever is wider. Measured once the font is in.
+  let ocardWidth = 0;
+  function cardWidth() {
+    if (ocardWidth) return ocardWidth;
+    const ctx = document.createElement("canvas").getContext("2d"), fam = getComputedStyle(document.body).fontFamily;
+    let w = 0;
+    ctx.font = `700 12.5px ${fam}`;
+    Object.keys(G.nodes).forEach(n => tc(n).split(/\s+|(?<=-)/).forEach(word => { w = Math.max(w, ctx.measureText(word).width); }));
+    ctx.font = `400 11px ${fam}`;
+    ["none of yours", "9,999 songs", "99 styles"].forEach(t => { w = Math.max(w, ctx.measureText(t).width); });
+    const px = Math.ceil(w) + 14 + 3 + 2;   // + padding, border, a hair of slack
+    if (document.fonts.status === "loaded") ocardWidth = px;   // before the font is in, measure again next time
+    return px;
+  }
   function orgChart(o) {
     const picked = pickedSet();
     const isMoved = n => Object.prototype.hasOwnProperty.call(gEdit.moves, n);
@@ -1119,7 +1132,6 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
         h("span", { class: "nm" }, tc(n)),
         o.discover ? h("span", { class: "ct" }, styles ? plural(styles, "style") : "")
           : h("span", { class: "ct" }, cnt ? plural(cnt, "song") : "none of yours"),
-        o.discover ? null : h("span", { class: "obar", "aria-hidden": "true" }, h("i", { style: `width:${Math.min(100, Math.round(cnt / L.songs.length * 300))}%` })),
         isMoved(n) ? h("span", { class: "mv" }, "moved") : null);
       c.addEventListener("click", () => {
         if (cdrag.done) return;
@@ -1163,7 +1175,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const root = o.discover
       ? h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "All music"), h("span", { class: "ct" }, plural(tops.length, "genre")))
       : h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "Your library"), h("span", { class: "ct" }, plural(L.songs.length, "song")));
-    const org = h("ul", { class: "org", style: `--zoom:${chartView.zoom * ZOOM_BASE}` }, h("li", {}, root, topUl));
+    const org = h("ul", { class: "org", style: `--zoom:${chartView.zoom * ZOOM_BASE}; --ow:${cardWidth()}px` }, h("li", {}, root, topUl));
     const chart = h("div", { class: "ochart" + (o.canEdit ? " can-edit" : "") }, org);
     chart.addEventListener("pointerdown", e => {   // drag empty space to pan
       if (e.button !== 0 || e.target.closest("button")) return;
