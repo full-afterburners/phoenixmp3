@@ -85,13 +85,19 @@ app until the new one can do everything. Run it with `.\python\pythonw.exe app.p
   number of songs that would move, and "Also re-file my library" runs
   `fillgenres.py --refile` in the background, with its progress in the status
   capsule.
+- Get Music searches MusicBrainz live (`musicinfo.py`, using `mbsearch.py`).
+  Last.fm is asked first, because its search is ordered by listeners and
+  MusicBrainz free text can miss the famous song entirely. Clicking an artist
+  opens their profile: MusicBrainz facts and releases, a Wikimedia Commons photo,
+  and Last.fm bio, tags and top songs. Albums open with their editions and track
+  list. Profiles and album pages are cached for a week in `cache/`.
 - Downloads and preferences don't work yet. The Classic Window button opens
   `gui.pyw` for those, and `phoenixmp3.exe` opens this window (`--classic` for
   the old one).
 
 The same page also runs outside the app as a design mockup. Without
 `?desktop` it loads `data.json`/`genres.json` snapshots and `demo.json`
-(sample search results, which the app uses too until real search is wired in).
+(sample search results).
 
 `node ui/tests/desktop_test.mjs` opens the real window with WebView2's
 DevTools port and checks it end to end.

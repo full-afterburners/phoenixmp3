@@ -126,16 +126,17 @@ def _library() -> dict:
     settings = load_settings()
     out_dir = output_dir(settings)
     with open_db() as db:
-        rows = db.execute("select id, title, artist, albumartist, album, year, genres, length, added, track, path "
-                          "from items order by added, id").fetchall()
+        rows = db.execute("select id, title, artist, albumartist, album, year, genres, length, added, track, path, "
+                          "mb_artistid from items order by added, id").fetchall()
     songs, paths, groups = [], [], defaultdict(list)
-    for rid, title, artist, aa, album, year, genres, length, added, track, path in rows:
+    for rid, title, artist, aa, album, year, genres, length, added, track, path, aid in rows:
         p = Path(as_text(path))
         full = p if p.is_absolute() else out_dir / p
         groups[((aa or artist or "").strip(), (album or title or "").strip())].append(len(songs))
         songs.append({"id": rid, "t": title, "a": artist, "al": album or "", "y": year or None,
                       "g": as_text(genres).split("\x00")[0], "len": round(length or 0), "add": int(added or 0),
-                      "n": track or 0, "ext": full.suffix.lstrip("."), "f": full.name})
+                      "n": track or 0, "ext": full.suffix.lstrip("."), "f": full.name,
+                      "aid": as_text(aid)})   # MusicBrainz artist id: opens the artist's profile
         paths.append(full)
     keys = list(groups)
     with ThreadPoolExecutor(max_workers=4) as pool:

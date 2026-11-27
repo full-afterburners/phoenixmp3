@@ -44,6 +44,7 @@ try:
 
     import appdata  # noqa: E402
     import genrerules  # noqa: E402
+    import musicinfo  # noqa: E402
 except Exception:
     # pythonw has no console: without this a broken install would just show nothing at all
     log.exception("the new window's parts didn't load; opening the classic window")
@@ -88,12 +89,28 @@ class Api:
             raise ValueError("bad genre name")
         return _logged(f"Last.fm albums for {tag}", appdata.genre_albums, tag.strip().lower())
 
+    def search(self, kind: str, text: str, artist: str | None = None) -> list:
+        """MusicBrainz search: kind is albums, songs or artists."""
+        return _logged(f"searching {kind}", musicinfo.search, kind, text, artist)
+
+    def artist_profile(self, mbid: str) -> dict:
+        return _logged("loading an artist profile", musicinfo.artist, mbid)
+
+    def album_page(self, group_id: str) -> dict:
+        return _logged("loading an album", musicinfo.album, group_id)
+
+    def release_tracks(self, release_id: str) -> dict:
+        return _logged("loading an edition", musicinfo.release, release_id)
+
 
 def _logged(what: str, fn, *args):
     """Run fn, logging unexpected failures; settings the page got wrong (RulesError) aren't logged as crashes."""
     try:
         return fn(*args)
     except genrerules.RulesError:
+        raise
+    except (OSError, ValueError) as e:   # offline, a service said no, bad input: the page shows it
+        log.warning("%s failed: %s", what, e)
         raise
     except Exception:
         log.exception("%s failed", what)

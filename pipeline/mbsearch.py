@@ -52,6 +52,20 @@ def names(artist_credit: list) -> list[str]:
     return out
 
 
+def artist_id(artist_credit: list) -> str | None:
+    """The first credited artist's MusicBrainz id, for opening their profile."""
+    return next(((c.get("artist") or {}).get("id") for c in artist_credit or [] if (c.get("artist") or {}).get("id")), None)
+
+
+def years_active(life_span: dict | None) -> str:
+    """'1988–' or '1965–1970' from a life span; '' when MusicBrainz doesn't know."""
+    ls = life_span or {}
+    begin, end = (ls.get("begin") or "")[:4], (ls.get("end") or "")[:4]
+    if not begin:
+        return ""
+    return f"{begin}–{end}" if end or ls.get("ended") else f"{begin}–"
+
+
 def year(date: str | None) -> int | None:
     return int(date[:4]) if date and date[:4].isdigit() else None
 
@@ -60,27 +74,30 @@ def seconds(ms) -> int | None:
     return round(ms / 1000) if ms else None
 
 
-def query(api, entity: str, title_field: str, text: str, artist: str | None) -> list:
+def query(api, entity: str, title_field: str, text: str, artist: str | list[str] | None, limit: int = LIMIT) -> list:
     """Search one entity. With an artist, match it as credited ("Machine Gun Kelly")
-    or by the artist's own name ("mgk"), which beets' search() can't combine."""
-    if not artist:
-        return api.search(entity, {"": text}, limit=LIMIT)
-    t, a = api.format_search_term("", text), api.format_search_term("", artist)
-    q = f"{title_field}:({t}) AND (artist:({a}) OR artistname:({a}))"
-    return api._get_resource(entity, query=q, limit=LIMIT)[entity.replace("-", "_") + "s"]
+    or by the artist's own name ("mgk"), which beets' search() can't combine.
+    A list of artists matches any of them (the app passes Last.fm's most played ones)."""
+    artists = [a for a in ([artist] if isinstance(artist, str) else artist or []) if a and a.strip()]
+    if not artists:
+        return api.search(entity, {"": text}, limit=limit)
+    t = api.format_search_term("", text)
+    who = " OR ".join(f"artist:({a}) OR artistname:({a})" for a in map(lambda n: api.format_search_term("", n), artists))
+    q = f"{title_field}:({t}) AND ({who})"
+    return api._get_resource(entity, query=q, limit=limit)[entity.replace("-", "_") + "s"]
 
 
-def search_albums(api, text: str, artist: str | None = None) -> dict:
-    found = query(api, "release-group", "releasegroup", text, artist)
+def search_albums(api, text: str, artist: str | list[str] | None = None, limit: int = LIMIT) -> dict:
+    found = query(api, "release-group", "releasegroup", text, artist, limit)
     return {"results": [{
         "id": rg["id"], "title": rg.get("title"), "artist": credit(rg.get("artist_credit")),
-        "type": rg.get("primary_type"), "secondary": rg.get("secondary_types") or [],
+        "artist_id": artist_id(rg.get("artist_credit")), "type": rg.get("primary_type"), "secondary": rg.get("secondary_types") or [],
         "year": year(rg.get("first_release_date")), "score": rg.get("score"),
     } for rg in found]}
 
 
-def search_songs(api, text: str, artist: str | None = None) -> dict:
-    found = query(api, "recording", "recording", text, artist)
+def search_songs(api, text: str, artist: str | list[str] | None = None, limit: int = LIMIT) -> dict:
+    found = query(api, "recording", "recording", text, artist, limit)
     out = []
     for rec in found:
         releases = rec.get("releases") or []
@@ -90,8 +107,9 @@ def search_songs(api, text: str, artist: str | None = None) -> dict:
         first = min(studio or releases, key=lambda r: r.get("date") or "9999", default={})
         out.append({
             "id": rec["id"], "title": rec.get("title"), "artist": credit(rec.get("artist_credit")),
-            "artist_names": names(rec.get("artist_credit")), "length": seconds(rec.get("length")), "disambiguation": rec.get("disambiguation") or "",
+            "artist_id": artist_id(rec.get("artist_credit")), "artist_names": names(rec.get("artist_credit")), "length": seconds(rec.get("length")), "disambiguation": rec.get("disambiguation") or "",
             "album": (first.get("release_group") or {}).get("title") or first.get("title"),
+            "album_id": (first.get("release_group") or {}).get("id"),
             "year": year(rec.get("first_release_date") or first.get("date")),
             "score": rec.get("score"), "_studio": bool(studio),
             "_version": bool(VERSION.search(f"{rec.get('title')} {rec.get('disambiguation') or ''}")),
@@ -111,13 +129,14 @@ def search_artists(api, text: str) -> dict:
     return {"results": [{
         "id": a["id"], "name": a.get("name"), "disambiguation": a.get("disambiguation") or "",
         "country": a.get("country"), "type": a.get("type"), "score": a.get("score"),
+        "area": (a.get("area") or {}).get("name") or "", "years": years_active(a.get("life_span")),
     } for a in found]}
 
 
-def browse_all(api, entity: str, **kwargs) -> list:
+def browse_all(api, entity: str, max_pages: int = MAX_PAGES, **kwargs) -> list:
     """Every page of a browse: popular albums have more than 100 releases."""
     out = []
-    for page in range(MAX_PAGES):
+    for page in range(max_pages):
         got = api._browse(entity, limit=PAGE, offset=page * PAGE, **kwargs)
         out += got
         if len(got) < PAGE:
@@ -179,6 +198,7 @@ def tracks(api, release_id: str) -> dict:
         # the same name fillalbums.py uses.
         "title": group.get("title") or rel.get("title"), "edition": rel.get("title"),
         "artist": album_artist, "artist_names": names(rel.get("artist_credit")),
+        "artist_id": artist_id(rel.get("artist_credit")),
         "year": year(group.get("first_release_date") or rel.get("date")),
         "type": group.get("primary_type"), "discs": len(media),
         "disc_tracks": [len(m.get("tracks") or []) for m in media],

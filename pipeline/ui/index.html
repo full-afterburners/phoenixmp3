@@ -298,6 +298,54 @@ svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none;
 .choice small { color: var(--ink-2); }
 .browse.in-lib { max-width: none; margin-top: 0; }
 .btn.small { height: 26px; padding: 0 9px; font-size: 12px; }
+a.btn { text-decoration: none; color: inherit; }
+a.btn.primary { color: var(--accent-ink); }
+
+/* live search results: the whole row opens the result, the artist name inside opens their profile */
+.res.live { position: relative; }
+.res-main { border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; display: block; max-width: 100%; cursor: pointer; }
+.res-main::after { content: ""; position: absolute; inset: 0; border-radius: 10px; }
+.res-main:focus-visible::after { box-shadow: 0 0 0 2px var(--accent); }
+.res.live a, .res.live .chip { position: relative; z-index: 1; }
+.res.live small a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.res.live small a:hover { color: var(--accent); text-decoration: underline; }
+.res .round { border-radius: 50% !important; }
+.artist-filter { display: flex; justify-content: center; }
+.artist-filter .chip button { border: 0; background: none; color: inherit; padding: 0 0 0 2px; cursor: pointer; font-weight: 700; }
+.loading { color: var(--ink-2); padding: 30px 0; text-align: center; display: flex; gap: 10px; align-items: center; justify-content: center; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+/* artist profile */
+.profile-hero { position: relative; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 30px; align-items: center; padding: 26px; margin: 0 0 8px; border-radius: 18px; overflow: hidden; isolation: isolate; }
+.profile-hero .wash { position: absolute; inset: -40px; z-index: -1; background-size: cover; background-position: center; filter: blur(40px) saturate(1.4); opacity: .38; transform: scale(1.1); }
+.profile-hero::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--pane) 0%, color-mix(in srgb, var(--pane) 55%, transparent) 100%); }
+.profile-hero .photo, .profile-hero .art-ph { width: 200px; height: 200px; border-radius: 50%; object-fit: cover; box-shadow: var(--shadow-pop); font-size: 64px; }
+.profile-hero .kind { color: var(--ink-2); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.profile-hero h1 { font-size: 44px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; margin: 4px 0 8px; }
+.profile-hero .facts { color: var(--ink-2); }
+.profile-hero .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.profile-hero .row { margin-top: 16px; }
+.bio { max-width: 760px; color: var(--ink-2); line-height: 1.55; margin-top: 18px; }
+.bio p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.bio.open p { display: block; }
+.bio button { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 2px 0; cursor: pointer; }
+.top-songs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; }
+.top-song { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 8px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; color: inherit; font: inherit; cursor: pointer; border-radius: 0; }
+.top-song:hover { background: var(--hover); }
+.top-song .n { color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: right; }
+.top-song b { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-song small { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tile .owned { position: absolute; top: 8px; left: 8px; }
+.tile .art-wrap { position: relative; }
+.tbl tr.focus td { background: var(--accent-soft); }
+@media (max-width: 900px) {
+  .profile-hero { grid-template-columns: minmax(0, 1fr); text-align: center; justify-items: center; }
+  .profile-hero .tags, .profile-hero .row { justify-content: center; }
+  .profile-hero::after { background: color-mix(in srgb, var(--pane) 60%, transparent); }
+  .top-songs { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* org chart */
 .ochart-wrap { display: flex; flex-direction: column; gap: 8px; }
@@ -568,7 +616,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2600); }
 
   // ---------- derived library ----------
-  let artists = [], genreMap = new Map();
+  let artists = [], genreMap = new Map(), libByMbid = new Map();
   function derive() {
     const byArtist = new Map();
     L.albums.forEach(al => {
@@ -578,6 +626,14 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     });
     artists = [...byArtist.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     artists.forEach((a, i) => { a.id = i; a.albums.sort((x, y) => (y.year || 0) - (x.year || 0)); });
+    // Each library artist's MusicBrainz id (the commonest one on their songs), for opening their profile
+    libByMbid = new Map();
+    artists.forEach(a => {
+      const c = new Map();
+      a.albums.forEach(al => al.songs.forEach(i => { const id = L.songs[i].aid; if (id) c.set(id, (c.get(id) || 0) + 1); }));
+      a.mbid = [...c].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+      if (a.mbid) libByMbid.set(a.mbid, a);
+    });
     genreMap = new Map();
     L.songs.forEach((s, i) => { const g = s.g || "No genre"; if (!genreMap.has(g)) genreMap.set(g, []); genreMap.get(g).push(i); });
     $("nArtists").textContent = artists.length; $("nAlbums").textContent = L.albums.length; $("nSongs").textContent = L.songs.length;
@@ -591,7 +647,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   const VIEWS = {
     recent: viewRecent, albums: viewAlbums, album: viewAlbum, artists: viewArtists, artist: viewArtist,
     songs: viewSongs, genres: viewGenres, genre: viewGenre, get: viewGet, activity: viewActivity,
-    playlists: viewPlaylists, prefs: viewPrefs,
+    playlists: viewPlaylists, prefs: viewPrefs, mbartist: viewMbArtist, mbalbum: viewMbAlbum,
   };
   function route() {
     const raw = (location.hash || "#recent").slice(1);
@@ -697,7 +753,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const songs = a.albums.flatMap(al => al.songs);
     return h("div", {},
       head(a.name, `${plural(a.albums.length, "album")} · ${plural(a.songs, "song")}`,
-        h("button", { class: "btn", type: "button", onclick: () => { getState.q = a.name; getState.tab = "albums"; go("get"); } }, icon("search"), "Find More by " + a.name)),
+        IN_APP && a.mbid ? h("a", { class: "btn primary", id: "profileBtn", href: "#mbartist-" + a.mbid }, icon("search"), "Artist Profile")
+          : h("button", { class: "btn", type: "button", onclick: () => { getState.q = a.name; getState.tab = "albums"; go("get"); } }, icon("search"), "Find More by " + a.name)),
       h("div", { class: "grid" }, a.albums.map(albumTile)),
       h("h2", { class: "section-title" }, "Songs"), songTable(songs, { artist: false }));
   }
@@ -771,7 +828,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   }
 
   // ---------- get music ----------
-  const getState = { q: "", tab: "albums", pick: null, edition: null, chosen: null, mode: "search", path: [] };
+  // artist: {name, id} narrows song and album searches to one artist (set from an artist's profile)
+  const getState = { q: "", tab: "albums", pick: null, edition: null, chosen: null, mode: "search", path: [], artist: null };
   let G = null, gLoading = false;   // genres.json: tree + Last.fm top albums per genre
 
   function modeSwitch() {
@@ -1233,25 +1291,38 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const tabs = h("div", { class: "seg", role: "group", "aria-label": "Result type" },
       ["albums", "songs", "artists"].map(t => h("button", { type: "button", "aria-pressed": String(getState.tab === t),
         onclick: () => { getState.tab = t; getState.pick = null; draw(); } }, t[0].toUpperCase() + t.slice(1))));
+    const filterBox = h("div", { class: "artist-filter" });
     function draw() {
       [...tabs.children].forEach(b => b.setAttribute("aria-pressed", String(b.textContent.toLowerCase() === getState.tab)));
+      const ar = getState.artist;
+      filterBox.replaceChildren(ar && getState.tab !== "artists" ? h("span", { class: "chip acc", id: "artistFilter" }, `Only ${ar.name}`,
+        h("button", { type: "button", "aria-label": "Search every artist", onclick: () => { getState.artist = null; draw(); } }, "×")) : "");
       const q = getState.q.trim();
       if (!q) { out.replaceChildren(); tabs.hidden = true; return; }
       if (isLink(q)) { tabs.hidden = true; out.replaceChildren(linkCard(q)); return; }
       tabs.hidden = false;
+      if (IN_APP) { out.replaceChildren(liveResults(q)); return; }
       if (getState.pick != null && getState.tab === "albums" && isDemo(q)) { out.replaceChildren(releaseView()); return; }
       out.replaceChildren(resultsList(q));
     }
-    input.addEventListener("input", () => { getState.q = input.value; getState.pick = null; draw(); });
+    // In the app every search asks MusicBrainz (one request a second), so wait until typing stops
+    let typing;
+    input.addEventListener("input", () => {
+      getState.q = input.value; getState.pick = null;
+      clearTimeout(typing);
+      if (IN_APP && !isLink(input.value)) typing = setTimeout(draw, 450); else draw();
+    });
     input.addEventListener("paste", () => setTimeout(() => { getState.q = input.value; draw(); }, 0));
     wrap.append(h("div", { class: "hero-search" },
       h("div", { class: "head", style: "margin:0;justify-content:center;text-align:center" }, h("div", {}, h("h1", {}, "Get Music"),
         h("p", { class: "sub" }, "Type what you want to hear. phoenixmp3 finds the official album or song, matches it on YouTube Music and tags it properly."))),
       modeSwitch(),
       h("div", { class: "big-input" }, icon("search"), input),
-      h("div", { class: "tries" }, ["tickets to my downfall", "fade into you", "https://music.youtube.com/playlist?list=…"].map(t =>
-        h("button", { type: "button", onclick: () => { getState.q = t; getState.pick = null; input.value = t; draw(); } }, t.startsWith("http") ? "Paste a link" : t))),
-      h("div", { style: "display:flex;justify-content:center" }, tabs)), out);
+      h("div", { class: "tries" }, (IN_APP ? [["mazzy star", "artists"], ["tickets to my downfall", "albums"], ["fade into you", "songs"]]
+        : [["tickets to my downfall"], ["fade into you"], ["https://music.youtube.com/playlist?list=…"]]).map(([t, tab]) =>
+        h("button", { type: "button", onclick: () => { getState.q = t; getState.pick = null; getState.artist = null; if (tab) getState.tab = tab; input.value = t; draw(); } },
+          t.startsWith("http") ? "Paste a link" : t))),
+      h("div", { style: "display:flex;justify-content:center" }, tabs), filterBox), out);
     draw();
     setTimeout(() => input.focus(), 0);
     return wrap;
@@ -1346,6 +1417,209 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     refresh();
     return box;
   }
+  // ---------- live search, artist profiles and album pages (the app; MusicBrainz + Last.fm via Python) ----------
+  const caa = id => `https://coverartarchive.org/release-group/${id}/front-250`;
+  const compact = n => new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n);
+  const sep = (...parts) => parts.filter(p => p != null && p !== "").flatMap((p, i) => i ? [" · ", p] : [p]);
+  const artistLink = (name, id) => id ? h("a", { href: "#mbartist-" + id }, name) : name;
+  function remoteArt(url, label, cls = "art") {   // a picture from the web, or the coloured letter if it won't load
+    if (!url) return placeholder(label, cls + " art-ph");
+    const img = h("img", { class: cls, src: url, alt: "", loading: "lazy" });
+    img.addEventListener("error", () => img.replaceWith(placeholder(label, cls + " art-ph")), { once: true });
+    return img;
+  }
+  const asked = new Map();   // answers already asked for this session; failures are forgotten so Try Again asks again
+  function ask(key, call) {
+    if (!asked.has(key)) {
+      const p = apiReady.then(call);
+      asked.set(key, p);
+      p.catch(() => asked.delete(key));
+    }
+    return asked.get(key);
+  }
+  function later(promise, render, waitText) {   // a box that shows a spinner until the answer comes
+    const box = h("div", {}, h("div", { class: "loading" }, h("span", { class: "spinner", "aria-hidden": "true" }), waitText));
+    promise.then(d => { if (box.isConnected) box.replaceChildren(render(d)); },
+      e => { if (box.isConnected) box.replaceChildren(h("div", { class: "empty" }, `Couldn't load it (${errText(e)}). `,
+        h("button", { class: "btn small", type: "button", onclick: () => route() }, "Try Again"))); });
+    return box;
+  }
+  // "Summertime (feat. Louis Armstrong)" in the library is "Summertime" on MusicBrainz
+  const songTitle = t => norm((t || "").replace(/\s*[([](feat|ft|featuring|with)\.?\s[^)\]]*[)\]]/gi, ""));
+  function libHas(title, artistId, names) {   // a song with this title by this artist is in the library
+    const t = songTitle(title), ns = (names || []).map(norm).filter(Boolean);
+    return L.songs.some(s => songTitle(s.t) === t && ((artistId && s.aid === artistId) || ns.some(n => norm(s.a).includes(n))));
+  }
+  function ownedBy(title, artist) {   // stricter than ownedAlbum: the artist has to match too
+    const t = norm(title), a = norm(artist);
+    return a ? L.albums.find(al => norm(al.name) === t && (norm(al.artist).includes(a) || a.includes(norm(al.artist)))) : null;
+  }
+  function searchBy(p, tab, q) {
+    Object.assign(getState, { mode: "search", tab, q, pick: null, artist: { name: p.name, id: p.id } });
+    go("get");
+  }
+
+  function liveRow(art, title, sub, chip, open) {
+    return h("div", { class: "res live" }, art,
+      h("div", {}, h("button", { class: "res-main", type: "button", onclick: open }, h("b", {}, title)), h("small", {}, sub)),
+      chip || h("span", {}));
+  }
+  let mbFocus = null;   // {album, rec, title}: the song picked in a song search, preselected on its album page
+  function albumResult(r) {
+    const own = ownedBy(r.title, r.artist);
+    return liveRow(own ? cover(own) : remoteArt(caa(r.id), r.title), r.title,
+      sep([r.type || "Album", ...r.secondary].join(" + "), artistLink(r.artist, r.artist_id), r.year),
+      own ? h("span", { class: "chip ok" }, icon("check"), `${plural(own.songs.length, "song")} in library`) : null,
+      () => { mbFocus = null; go("mbalbum-" + r.id); });
+  }
+  function songResult(r) {
+    const have = libHas(r.title, r.artist_id, r.artist_names);
+    return liveRow(remoteArt(r.album_id && caa(r.album_id), r.album || r.title), r.title,
+      sep(artistLink(r.artist, r.artist_id), r.album, r.year, r.length ? mins(r.length) : ""),
+      have ? h("span", { class: "chip ok" }, icon("check"), "In library") : r.disambiguation ? h("span", { class: "chip mute" }, r.disambiguation) : null,
+      () => {
+        if (!r.album_id) { toast("MusicBrainz doesn't list an album for this recording"); return; }
+        mbFocus = { album: r.album_id, rec: r.id, title: r.title }; go("mbalbum-" + r.album_id);
+      });
+  }
+  function artistResult(r) {
+    const mine = libByMbid.get(r.id);
+    const art = mine && mine.albums[0].cover ? h("img", { class: "art round", src: mine.albums[0].cover, alt: "" }) : placeholder(r.name, "art art-ph round");
+    return liveRow(art, r.name, sep(r.type, r.area, r.years, r.disambiguation),
+      mine ? h("span", { class: "chip ok" }, icon("check"), `In library · ${plural(mine.songs, "song")}`) : null,
+      () => go("mbartist-" + r.id));
+  }
+  function liveResults(q) {
+    const tab = getState.tab, ar = tab !== "artists" && getState.artist ? getState.artist.name : null;
+    const key = ["search", tab, q.toLowerCase(), (ar || "").toLowerCase()].join("\u0000");
+    return h("div", { id: "liveResults" }, later(ask(key, () => window.pywebview.api.search(tab, q, ar)), rows => {
+      const box = h("div", { class: "results" });
+      if (!rows.length) box.append(h("p", { class: "empty" }, `MusicBrainz found no ${tab} for “${q}”${ar ? ` by ${ar}` : ""}.`));
+      rows.forEach(r => box.append(tab === "albums" ? albumResult(r) : tab === "songs" ? songResult(r) : artistResult(r)));
+      const lib = tab === "albums" ? libraryMatches(q) : [];
+      if (lib.length) {
+        box.append(h("h2", { class: "section-title" }, "Already in your library"));
+        lib.forEach(al => box.append(h("button", { class: "res", type: "button", onclick: () => go("album-" + al.id) }, cover(al),
+          h("div", {}, h("b", {}, al.name), h("small", {}, `${al.artist} · ${plural(al.songs.length, "song")}`)), h("span", { class: "chip ok" }, icon("check"), "In library"))));
+      }
+      return box;
+    }, "Searching MusicBrainz…"));
+  }
+
+  function viewMbArtist(id) {
+    if (!IN_APP) return h("div", { class: "empty" }, "Artist profiles load in the app.");
+    return later(ask("artist\u0000" + id, () => window.pywebview.api.artist_profile(id)), artistProfile, "Loading the artist…");
+  }
+  function releaseTile(r, p) {
+    const own = ownedBy(r.title, p.name);
+    return h("a", { class: "tile", href: "#mbalbum-" + r.id },
+      h("div", { class: "art-wrap" }, own ? cover(own) : remoteArt(caa(r.id), r.title), own ? h("span", { class: "chip ok owned" }, icon("check"), `${plural(own.songs.length, "song")} in library`) : null),
+      h("span", { class: "t1" }, r.title), h("span", { class: "t2" }, r.year || ""));
+  }
+  function artistProfile(p) {
+    const mine = libByMbid.get(p.id) || artistOf(p.name);
+    const where = p.from && p.area && p.from !== p.area ? `${p.from}, ${p.area}` : (p.from || p.area);
+    const years = p.years ? (p.years.endsWith("–") ? p.years + "present" : p.years) : "";
+    const frag = h("div", { class: "profile", id: "profile" });
+    frag.append(h("section", { class: "profile-hero", "aria-label": p.name },
+      p.photo ? h("div", { class: "wash", style: `background-image:url("${p.photo}")` }) : null,
+      p.photo ? remoteArt(p.photo, p.name, "photo") : placeholder(p.name, "art-ph"),
+      h("div", {},
+        h("p", { class: "kind" }, p.type || "Artist"),
+        h("h1", {}, p.name),
+        h("p", { class: "facts" }, sep(where, years, p.disambiguation, p.listeners ? `${compact(p.listeners)} listeners on Last.fm` : "")),
+        p.tags.length ? h("div", { class: "tags" }, p.tags.map(t => h("span", { class: "chip mute" }, t))) : null,
+        h("div", { class: "row" },
+          mine ? h("a", { class: "btn", href: "#artist-" + mine.id }, icon("check"), `In Your Library · ${plural(mine.songs, "song")}`) : null,
+          h("button", { class: "btn", type: "button", onclick: () => searchBy(p, "songs", "") }, icon("search"), "Search Their Songs")))));
+    if (p.bio) {
+      const bio = h("div", { class: "bio" }, h("p", {}, p.bio));
+      const more = h("button", { type: "button", onclick: () => { bio.classList.toggle("open"); more.textContent = bio.classList.contains("open") ? "Less" : "More"; } }, "More");
+      bio.append(more); frag.append(bio);
+    }
+    if (p.top.length) {
+      frag.append(h("h2", { class: "section-title" }, "Top Songs"), h("div", { class: "top-songs" }, p.top.map((t, i) => {
+        const have = libHas(t.title, p.id, [p.name]);
+        return h("button", { class: "top-song", type: "button", title: "Find this song on MusicBrainz", onclick: () => searchBy(p, "songs", t.title) },
+          h("span", { class: "n" }, i + 1), h("span", {}, h("b", {}, t.title), h("small", {}, `${compact(t.plays)} plays`)),
+          have ? h("span", { class: "chip ok" }, icon("check"), "In library") : h("span", { class: "chip acc" }, icon("search"), "Find"));
+      })));
+    }
+    const section = (title, rows, limit) => {
+      if (!rows.length) return [];
+      const grid = h("div", { class: "grid" });
+      const fill = all => grid.replaceChildren(...(all ? rows : rows.slice(0, limit)).map(r => releaseTile(r, p)));
+      fill(false);
+      const more = rows.length > limit ? h("button", { class: "btn ghost small", type: "button", onclick: e => { fill(true); e.currentTarget.remove(); } }, `Show All ${rows.length}`) : null;
+      return [h("h2", { class: "section-title" }, title, more), grid];
+    };
+    frag.append(...section("Albums", p.albums, 18), ...section("EPs", p.eps, 12), ...section("Singles", p.singles, 12));
+    if (mine) frag.append(h("h2", { class: "section-title" }, "In Your Library"), h("div", { class: "grid" }, mine.albums.map(albumTile)));
+    if (!p.albums.length && !p.eps.length && !p.singles.length) frag.append(h("p", { class: "empty" }, "MusicBrainz lists no albums, EPs or singles of their own."));
+    if (p.problems.length) frag.append(h("p", { class: "note", style: "margin-top:20px" }, "Not shown this time: " + p.problems.join(", ")));
+    return frag;
+  }
+
+  const mbEdition = new Map();   // album id -> the edition (release id) picked on its page
+  function viewMbAlbum(gid) {
+    if (!IN_APP) return h("div", { class: "empty" }, "Album pages load in the app.");
+    return later(ask("album\u0000" + gid, () => window.pywebview.api.album_page(gid)), d => {
+      const rel = mbEdition.get(gid);
+      if (!rel || rel === d.release.id) return albumPage(gid, d, d);
+      return later(ask("release\u0000" + rel, () => window.pywebview.api.release_tracks(rel)), t => albumPage(gid, d, t), "Loading that edition…");
+    }, "Loading the album…");
+  }
+  function editionName(e, all) {
+    const std = (all.find(x => x.default) || all[0]).tracks, most = Math.max(...all.map(x => x.tracks));
+    return e.default ? "Standard" : e.tracks < std ? "Shorter" : e.tracks === most ? "Deluxe" : "Expanded";
+  }
+  function albumPage(gid, d, cur) {
+    const rel = cur.release, tracks = cur.tracks;
+    const own = ownedBy(rel.title, rel.artist);
+    const have = tracks.map(t => libHas(t.title, rel.artist_id, (t.artist_names || []).concat(rel.artist_names || [rel.artist])));
+    // the same song can be a different recording on this edition, so fall back to its title
+    const focusAt = () => { const byRec = tracks.findIndex(t => t.recording_id === mbFocus.rec); return byRec >= 0 ? byRec : tracks.findIndex(t => norm(t.title) === norm(mbFocus.title)); };
+    const focus = mbFocus && mbFocus.album === gid ? focusAt() : -1;
+    const chosen = new Set(focus >= 0 ? (have[focus] ? [] : [focus]) : tracks.map((_, i) => i).filter(i => !have[i]));
+    const total = tracks.reduce((s, t) => s + (t.length || 0), 0);
+    const box = h("div", { class: "release", id: "albumPage" });
+    const count = h("b", {});
+    const dlBtn = h("button", { class: "btn primary", type: "button", id: "albumDownload",
+      onclick: () => toast("Downloading from this window comes next. For now, use the Classic Window.") }, icon("get"), "Download");
+    const refresh = () => { count.textContent = chosen.size ? plural(chosen.size, "song") + " to download" : "Nothing selected"; dlBtn.disabled = !chosen.size; };
+    box.append(h("button", { class: "btn ghost", type: "button", onclick: () => history.length > 1 ? history.back() : go("get") }, "‹ Back"));
+    box.append(h("div", { class: "album-hero", style: "margin-top:12px" }, own ? cover(own) : remoteArt(caa(gid), rel.title),
+      h("div", {},
+        h("p", { class: "meta" }, sep(rel.type || "Album", rel.year, "MusicBrainz")),
+        h("h1", {}, rel.title),
+        rel.artist_id ? h("a", { class: "by", href: "#mbartist-" + rel.artist_id, id: "albumArtist" }, rel.artist) : h("span", { class: "by" }, rel.artist),
+        rel.edition && rel.edition !== rel.title ? h("p", { class: "note" }, rel.edition) : null,
+        d.editions.length > 1 ? [h("p", { class: "note", style: "margin-top:6px" }, "Edition"),
+          h("div", { class: "editions", role: "group", "aria-label": "Edition" }, d.editions.map(e => h("button", {
+            class: "ed", type: "button", "aria-pressed": String(e.release === rel.id),
+            onclick: () => { mbEdition.set(gid, e.release); route(); } },
+            editionName(e, d.editions), h("small", {}, `${e.tracks} tracks · ${e.formats.slice(0, 2).join(", ")}`))))] : null)));
+    const nHave = have.filter(Boolean).length;
+    box.append(h("div", { class: "row", style: "margin-bottom:10px" },
+      nHave ? h("span", { class: "chip ok" }, icon("check"), `${nHave} in your library`) : null,
+      h("span", { class: "chip mute" }, `${plural(tracks.length, "track")}${total ? ` · ${Math.round(total / 60)} min` : ""}`)));
+    const discs = rel.discs > 1;
+    box.append(h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, h("th", { style: "width:34px" }, ""), h("th", { class: "num" }, "#"), h("th", {}, "Title"), h("th", {}, ""), h("th", { class: "time" }, "Time"))),
+      h("tbody", {}, tracks.map((t, i) => {
+        const cb = h("input", { type: "checkbox", class: "chk", "aria-label": "Download " + t.title, checked: chosen.has(i), disabled: have[i] });
+        cb.addEventListener("change", () => { cb.checked ? chosen.add(i) : chosen.delete(i); refresh(); });
+        const feat = t.artist && norm(t.artist) !== norm(rel.artist) ? t.artist : null;
+        return h("tr", { class: "r" + (i === focus ? " focus" : "") }, h("td", {}, cb), h("td", { class: "num" }, discs ? `${t.disc}-${t.n}` : t.n),
+          h("td", {}, t.title, feat ? h("span", { class: "dim" }, " · " + feat) : null),
+          h("td", {}, have[i] ? h("span", { class: "chip ok" }, icon("check"), "In library") : null),
+          h("td", { class: "time" }, t.length ? mins(t.length) : "–"));
+      }))));
+    box.append(h("div", { class: "sticky-foot" }, h("div", {}, count, h("p", { class: "note" }, "Tagged with this exact album, track numbers and year. Songs you already have are skipped.")), dlBtn));
+    refresh();
+    return box;
+  }
+
   function linkCard(q) {
     const isList = /list=/.test(q);
     return h("div", { class: "linkcard" }, h("div", { class: "yt" }, icon(isList ? "list" : "play")),

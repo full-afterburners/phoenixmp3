@@ -88,6 +88,38 @@ try {
   check("clicking a genre fetches its popular albums", await waitFor(`document.querySelectorAll('.gpanel .pop').length > 0`, 20000),
     await js(`document.querySelector('.gpanel h3')?.textContent`));
 
+  // ---- live search (real MusicBrainz/Last.fm lookups, read-only), artist profile, album page
+  await js(`[...document.querySelectorAll('.mode-switch button')].find(b => b.textContent === 'Search').click()`);
+  await waitFor(`!!document.getElementById('getQ')`);
+  const type = async (text, tab) => js(`(() => {
+    [...document.querySelectorAll('.seg button')].find(b => b.textContent === ${JSON.stringify(tab)})?.click();
+    const i = document.getElementById('getQ'); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input')); })()`);
+  await type("mazzy star", "Artists");
+  check("artist search shows MusicBrainz results", await waitFor(`[...document.querySelectorAll('#liveResults .res-main b')].some(b => b.textContent === 'Mazzy Star')`, 30000),
+    await js(`document.getElementById('liveResults')?.innerText.slice(0, 120)`));
+  await js(`[...document.querySelectorAll('#liveResults .res-main')].find(b => b.textContent === 'Mazzy Star').click()`);
+  check("clicking an artist opens their profile", await waitFor(`document.querySelector('#profile h1')?.textContent === 'Mazzy Star'`, 60000),
+    await js(`document.getElementById('view').innerText.slice(0, 160)`));
+  check("the profile lists their albums", await js(`[...document.querySelectorAll('#profile .section-title')].some(h => h.textContent.startsWith('Albums')) && document.querySelectorAll('#profile .tile').length >= 3`));
+  check("the profile has top songs from Last.fm", await js(`document.querySelectorAll('#profile .top-song').length > 0 || /Last\\.fm/.test(document.querySelector('#profile .note')?.textContent || '')`));
+  await js(`document.querySelector('#profile .tile').click()`);
+  check("an album on the profile opens its page with the track list", await waitFor(`document.querySelectorAll('#albumPage tbody tr').length >= 3`, 60000),
+    await js(`document.getElementById('view').innerText.slice(0, 160)`));
+  await js(`document.getElementById('albumArtist').click()`);
+  check("the album's artist name leads back to the profile", await waitFor(`document.querySelector('#profile h1')?.textContent === 'Mazzy Star'`, 10000));
+  await js(`location.hash = 'get'`);
+  await waitFor(`!!document.getElementById('getQ')`);
+  await type("fade into you", "Songs");
+  check("song search shows results with clickable artists", await waitFor(`document.querySelectorAll('#liveResults .res.live small a[href^="#mbartist-"]').length > 0`, 30000));
+  await js(`document.querySelector('#liveResults .res-main').click()`);
+  check("a song opens its album with that song picked", await waitFor(`!!document.querySelector('#albumPage tr.focus')`, 60000),
+    await js(`document.getElementById('view').innerText.slice(0, 160)`));
+  await js(`location.hash = 'artists'`);
+  await waitFor(`document.querySelectorAll('#view .avatar').length > 0`);
+  await js(`document.querySelector('#view .avatar').click()`);
+  check("a library artist page links to their profile", await waitFor(`!!document.getElementById('profileBtn') || !!document.querySelector('#view .head .btn')`, 5000),
+    await js(`document.getElementById('profileBtn') ? 'has profile' : 'no MusicBrainz id for this artist'`));
+
   // ---- saving genre changes. The count is the real one (fillgenres --preview changes nothing), but
   // save_genres and refile_status are swapped for fakes in the page: a real save would change your
   // genre settings and re-file your music files. genrerules.py's own save/re-file is tested on a scratch copy.
