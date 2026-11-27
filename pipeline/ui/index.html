@@ -433,6 +433,12 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
 .runrow small { color: var(--ink-2); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .summary { display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 16px 18px; border-radius: 14px; background: var(--ok-soft); margin-bottom: 20px; }
 .summary b { color: var(--ok); font-size: 15px; }
+.summary.warn { background: var(--warn-soft); }
+.summary.warn b { color: var(--warn); }
+.summary ul { margin: 6px 0 0 18px; color: var(--ink-2); font-size: 12px; }
+.step.skipped, .step.notrun { opacity: .45; }
+.step.stopped { border-color: var(--warn); }
+.runrow .act { display: flex; gap: 8px; align-items: center; }
 .log { margin-top: 14px; background: var(--sunk); border-radius: 10px; padding: 12px 14px; font: 11.5px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--ink-2); max-height: 260px; overflow: auto; white-space: pre; }
 
 /* playlists */
@@ -572,9 +578,9 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   const load = name => IN_APP ? apiReady.then(() => window.pywebview.api.load(name)) : fetchJSON(name + ".json");
   const errText = e => (e && (e.message || e.toString())) || "unknown error";
   let DEMO = null;
-  // The new window can't download yet, so it offers the classic one (gui.pyw) in its place.
+  // Playlists and settings are still only in the classic window (gui.pyw), so it stays a click away.
   if (IN_APP) document.querySelector(".mock-tag")?.replaceWith(h("button", { class: "btn small", type: "button", id: "classicBtn",
-    title: "The classic phoenixmp3 window, for downloading until this one can",
+    title: "The classic phoenixmp3 window, for playlists and settings until this one has them",
     onclick: () => apiReady.then(() => window.pywebview.api.open_classic()).then(() => toast("Opening the classic window…"), e => toast(`Couldn't open it (${errText(e)})`)) },
     "Classic Window"));
   let theme = "dark";
@@ -1585,7 +1591,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const box = h("div", { class: "release", id: "albumPage" });
     const count = h("b", {});
     const dlBtn = h("button", { class: "btn primary", type: "button", id: "albumDownload",
-      onclick: () => toast("Downloading from this window comes next. For now, use the Classic Window.") }, icon("get"), "Download");
+      onclick: () => startDownload({ kind: "album", release_id: rel.id, picks: [...chosen].sort((a, b) => a - b) }) }, icon("get"), "Download");
     const refresh = () => { count.textContent = chosen.size ? plural(chosen.size, "song") + " to download" : "Nothing selected"; dlBtn.disabled = !chosen.size; };
     box.append(h("button", { class: "btn ghost", type: "button", onclick: () => history.length > 1 ? history.back() : go("get") }, "‹ Back"));
     box.append(h("div", { class: "album-hero", style: "margin-top:12px" }, own ? cover(own) : remoteArt(caa(gid), rel.title),
@@ -1624,11 +1630,91 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const isList = /list=/.test(q);
     return h("div", { class: "linkcard" }, h("div", { class: "yt" }, icon(isList ? "list" : "play")),
       h("div", {}, h("b", {}, isList ? "YouTube playlist" : "YouTube video"),
-        h("p", { class: "note" }, isList ? "Preview shows every song in the playlist and which ones you already have." : "One song. It's tagged from MusicBrainz after it downloads."),
-        h("div", { class: "row", style: "margin-top:10px" },
+        h("p", { class: "note" }, IN_APP ? (isList ? "Every song in the playlist you don't have yet. Each is tagged from MusicBrainz after it downloads."
+          : "One song. It's tagged from MusicBrainz after it downloads.")
+          : isList ? "Preview shows every song in the playlist and which ones you already have." : "One song. It's tagged from MusicBrainz after it downloads."),
+        IN_APP ? h("div", { class: "row", style: "margin-top:10px" },
+          h("button", { class: "btn primary", type: "button", id: "linkDownload",
+            onclick: () => startDownload({ kind: "links", urls: [/^https?:\/\//i.test(q.trim()) ? q.trim() : "https://" + q.trim()] }) }, icon("get"), "Download"))
+        : h("div", { class: "row", style: "margin-top:10px" },
           h("button", { class: "btn", type: "button", onclick: () => toast("Preview lists the songs before anything downloads") }, "Preview"),
           h("button", { class: "btn primary", type: "button", onclick: () => startRun([{ t: "Holocene", a: "Bon Iver", al: "Bon Iver, Bon Iver" }, { t: "White Winter Hymnal", a: "Fleet Foxes", al: "Fleet Foxes" }, { t: "Stick Season", a: "Noah Kahan", al: "Stick Season" }], "YouTube playlist") }, icon("get"), "Download"),
           h("label", { class: "row note", style: "gap:6px" }, h("input", { type: "checkbox", class: "chk", id: "savePl" }), "Save to My Playlists"))));
+  }
+
+  // ---------- real downloads (the app: downloadrun.py, polled) ----------
+  let dl = null, dlWatching = false, dlLogOpen = false;
+  const STEP_VERB = { find: "Finding songs on YouTube Music", download: "Downloading", clean: "Cleaning titles and art",
+    tag: "Matching on MusicBrainz", albums: "Albums and years", genres: "Genres from Last.fm" };
+  function startDownload(job) {
+    if (dl && dl.running) { toast("A download is already running"); go("activity"); return Promise.resolve(); }
+    return apiReady.then(() => window.pywebview.api.start_download(job))
+      .then(st => { dl = st; dlLogOpen = false; watchDownload(); go("activity"); }, e => toast(`Couldn't start the download (${errText(e)})`));
+  }
+  function watchDownload() {
+    if (dlWatching) return;
+    dlWatching = true;
+    $("actDot").hidden = false;
+    const tick = () => window.pywebview.api.download_status().then(st => {
+      if (!st.steps) { dlWatching = false; return; }   // nothing has run in this window: nothing to show or reload
+      const changed = JSON.stringify(st) !== JSON.stringify(dl);
+      dl = st; dlLcd();
+      if (changed) drawRun();
+      if (st.running) { setTimeout(tick, 800); return; }
+      dlWatching = false;
+      toast(st.result === "done" ? `Finished: ${st.summary}` : st.summary || "The download ended");
+      reloadLibrary().catch(e => toast(`Couldn't reload the library (${errText(e)})`));
+    }, e => { dlWatching = false; toast(`Lost track of the download (${errText(e)})`); });
+    tick();
+  }
+  function dlLcd() {
+    if (!dl || !dl.steps || !dl.running) { $("lcdBar").style.width = "0"; setIdle(); return; }
+    const step = dl.steps.find(s => s.state === "active");
+    $("lcdTitle").textContent = !step ? "Starting" : step.key === "download" && step.total
+      ? `Downloading ${Math.min(step.done + 1, step.total)} of ${step.total}` : STEP_VERB[step.key];
+    $("lcdSub").textContent = dl.now || dl.label;
+    $("lcdBar").style.width = Math.round((dl.progress || 0) * 100) + "%";
+  }
+  const SONG_CHIP = {
+    queued: ["mute", "Queued"], finding: ["acc", "Searching"], found: ["acc", "Found"], unsure: ["warn", "Check match"],
+    notfound: ["warn", "Not on YouTube Music"], searchfail: ["bad", "Search failed"], downloading: ["acc", "Downloading"],
+    downloaded: ["acc", "Downloaded"], done: ["ok", "Done"], archived: ["mute", "Downloaded before"], failed: ["bad", "Failed"],
+    have: ["ok", "Already in library"],
+  };
+  function runSong(s) {
+    const [cls, text] = SONG_CHIP[s.state] || ["mute", s.state];
+    const anyway = s.state === "unsure" && !dl.running && dl.release_id ? h("button", { class: "btn small", type: "button",
+      title: "MusicBrainz has no length for this song, so only the title and artist were matched",
+      onclick: () => startDownload({ kind: "album", release_id: dl.release_id, picks: [{ i: s.i, video: s.video }] }) }, "Download Anyway") : null;
+    // the YouTube match is only worth showing when it isn't simply "artist - title" again
+    const note = norm(s.note) === norm(`${s.artist} ${s.title}`) ? "" : s.note;
+    return h("div", { class: "runrow" }, placeholder(s.title),
+      h("div", {}, h("b", {}, s.title), h("small", {}, sep(s.artist, note))),
+      h("div", { class: "act" }, anyway, h("span", { class: "chip " + cls }, text)));
+  }
+  function drawRun() {
+    const box = $("runBox");
+    if (!box || !dl || !dl.steps) return;
+    const logScroll = box.querySelector(".log")?.scrollTop;
+    const title = dl.running ? "Working…" : dl.result === "done" ? "Finished" : dl.result === "stopped" ? "Stopped" : "Stopped with a problem";
+    const kids = [head(title, dl.label,
+      dl.running ? h("button", { class: "btn", type: "button", id: "stopDownload", onclick: () => window.pywebview.api.stop_download().then(() => toast("Stopping…")) }, icon("x"), "Stop")
+        : h("button", { class: "btn primary", type: "button", onclick: () => go("get") }, icon("get"), "Get More Music"))];
+    if (!dl.running) kids.push(h("div", { class: "summary" + (dl.result === "done" && !dl.problems.length ? "" : " warn") },
+      h("div", {}, h("b", {}, dl.summary || title),
+        dl.problems.length ? h("ul", {}, dl.problems.slice(-5).map(p => h("li", {}, p))) : null),
+      dl.result === "done" ? h("button", { class: "btn", type: "button", onclick: () => go("genres") }, icon("tag"), "Review Genres") : null));
+    kids.push(h("div", { class: "steps" }, dl.steps.map(st => {
+      const pct = st.state === "done" ? 100 : st.total ? Math.round(st.done / st.total * 100) : 0;
+      const sub = { done: "Done", active: st.total ? `${Math.min(st.done, st.total)} of ${st.total}` : STEP_VERB[st.key], skipped: "Not needed", stopped: "Stopped", waiting: "Waiting", notrun: "Didn't run" }[st.state];
+      return h("div", { class: "step " + st.state }, h("b", {}, st.name), h("small", {}, sub), h("div", { class: "pb" }, h("i", { style: `width:${pct}%` })));
+    })));
+    if (dl.running && dl.now) kids.push(h("p", { class: "note", style: "margin:-10px 0 14px" }, dl.now));
+    kids.push(h("div", { class: "runlist", id: "runSongs" }, dl.songs.map(runSong)));
+    const logBox = h("pre", { class: "log", hidden: !dlLogOpen }, dl.log.join("\n") || "Nothing yet");
+    kids.push(h("button", { class: "btn ghost", type: "button", style: "margin-top:10px", onclick: () => { dlLogOpen = !dlLogOpen; logBox.hidden = !dlLogOpen; } }, "Show Log"), logBox);
+    box.replaceChildren(...kids);
+    if (logScroll != null) logBox.scrollTop = logScroll;
   }
 
   // ---------- activity (simulated run) ----------
@@ -1687,6 +1773,11 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   }
   function viewActivity() {
     const frag = h("div", {});
+    if (IN_APP && dl && dl.steps) {   // the app's real download; redrawn in place while it runs, so the page doesn't jump
+      const box = h("div", { id: "runBox" });
+      setTimeout(drawRun, 0);
+      return box;
+    }
     if (!run) {
       const last = lastRun() || [];
       frag.append(head("Activity", "What phoenixmp3 is doing, step by step"));
@@ -1791,6 +1882,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     derive(); route();
     // a re-file started before the page reloaded keeps running in Python: show its progress again
     if (IN_APP) window.pywebview.api.refile_status().then(st => { if (st.running) watchRefile(); }, () => {});
+    // the same for a download started before a reload
+    if (IN_APP) window.pywebview.api.download_status().then(st => { if (st.running) { dl = st; watchDownload(); } }, () => {});
   }).catch(err => { view.replaceChildren(h("div", { class: "empty" }, `Couldn't load the library (${errText(err)}).`)); });
 })();
 </script>

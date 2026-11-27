@@ -114,6 +114,17 @@ try {
   await js(`document.querySelector('#liveResults .res-main').click()`);
   check("a song opens its album with that song picked", await waitFor(`!!document.querySelector('#albumPage tr.focus')`, 60000),
     await js(`document.getElementById('view').innerText.slice(0, 160)`));
+  // Download sends the picked song to Python. Faked here: a real download would change your library
+  // (downloadrun.py is tested end to end in a sandbox copy of the app instead).
+  // tick exactly one song that isn't in the library (the picked one may already be)
+  const pickIndex = await js(`(() => { const boxes = [...document.querySelectorAll('#albumPage tbody input.chk')];
+    boxes.forEach(c => { if (c.checked) c.click(); });
+    const i = boxes.findIndex(c => !c.disabled); if (i >= 0) boxes[i].click(); return i; })()`);
+  await js(`window.pywebview.api.start_download = job => { window.__job = job; return Promise.resolve({ running: false, seq: 0 }); }`);
+  await js(`document.getElementById('albumDownload').click()`);
+  check("Download asks Python for just the ticked song", pickIndex >= 0 && await waitFor(`!!window.__job`, 3000) &&
+    await js(`window.__job.kind === 'album' && window.__job.picks.length === 1 && window.__job.picks[0] === ${pickIndex} && /^[0-9a-f-]{36}$/.test(window.__job.release_id)`),
+    await js(`JSON.stringify(window.__job || null)`));
   await js(`location.hash = 'artists'`);
   await waitFor(`document.querySelectorAll('#view .avatar').length > 0`);
   await js(`document.querySelector('#view .avatar').click()`);

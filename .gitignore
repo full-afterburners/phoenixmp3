@@ -37,3 +37,5 @@ dev/
 
 # New app window caches (cover thumbnails, Last.fm answers, WebView2 profile)
 pipeline/cache/
+pipeline/findtracks-run.json
+pipeline/search-run.json

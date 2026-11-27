@@ -91,7 +91,14 @@ app until the new one can do everything. Run it with `.\python\pythonw.exe app.p
   opens their profile: MusicBrainz facts and releases, a Wikimedia Commons photo,
   and Last.fm bio, tags and top songs. Albums open with their editions and track
   list. Profiles and album pages are cached for a week in `cache/`.
-- Downloads and preferences don't work yet. The Classic Window button opens
+- Download on an album page or a pasted YouTube link runs `downloadrun.py` in
+  the background, with progress in Activity and the status capsule. Album
+  songs are found with `findtracks.py` first; "found" ones download, "unsure"
+  ones wait for "Download Anyway", and `presettags.py` writes the picked album
+  and recording into the files after `cleantitles.py`. The other steps are the
+  classic window's, in the same order, using its helpers (imported from
+  `gui.pyw`). A download and a genre re-file never run at the same time.
+- My Playlists and preferences don't work yet. The Classic Window button opens
   `gui.pyw` for those, and `phoenixmp3.exe` opens this window (`--classic` for
   the old one).
 

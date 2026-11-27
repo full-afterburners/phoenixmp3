@@ -43,6 +43,7 @@ try:
     import webview  # noqa: E402  (needs libs on sys.path)
 
     import appdata  # noqa: E402
+    import downloadrun  # noqa: E402
     import genrerules  # noqa: E402
     import musicinfo  # noqa: E402
 except Exception:
@@ -58,6 +59,8 @@ class Api:
 
     def __init__(self) -> None:
         self._refile = genrerules.Refile()   # underscore: not exposed to the page
+        self._downloads = downloadrun.DownloadRun()
+        self._busy = threading.Lock()   # a download and a re-file both change the library: one at a time
 
     def preview_genres(self, rules: dict) -> dict:
         """Exactly how many songs these (unsaved) genre settings would move."""
@@ -65,7 +68,24 @@ class Api:
 
     def save_genres(self, rules: dict, refile: bool) -> dict:
         """Save the genre settings; refile=True also re-files the library in the background."""
-        return _logged("saving genre settings", genrerules.save, rules, self._refile, refile is True)
+        with self._busy:
+            if refile is True and self._downloads.running():
+                raise genrerules.RulesError("a download is running; save again when it's finished")
+            return _logged("saving genre settings", genrerules.save, rules, self._refile, refile is True)
+
+    def start_download(self, job: dict) -> dict:
+        """job: {"kind": "links", "urls": [...]} or {"kind": "album", "release_id", "picks": [...]}."""
+        checked = _logged("checking a download", downloadrun.parse_job, job)   # may ask MusicBrainz: not under the lock
+        with self._busy:
+            if self._refile.running():
+                raise ValueError("genres are being re-filed; download when that's finished")
+            return _logged("starting a download", self._downloads.start, checked)
+
+    def download_status(self) -> dict:
+        return self._downloads.status()
+
+    def stop_download(self) -> bool:
+        return self._downloads.stop()
 
     def refile_status(self) -> dict:
         return self._refile.status()
