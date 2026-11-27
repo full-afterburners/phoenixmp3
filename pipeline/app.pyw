@@ -46,6 +46,7 @@ try:
     import appsettings  # noqa: E402
     import downloadrun  # noqa: E402
     import genrerules  # noqa: E402
+    import installdir  # noqa: E402
     import musicinfo  # noqa: E402
     import myplaylists  # noqa: E402
 except Exception:
@@ -147,6 +148,31 @@ class Api:
         """New songs in one saved playlist (yt-dlp lists it; nothing downloads)."""
         return _logged("checking a playlist", myplaylists.check, url)
 
+    # ---------- the music folder and the files around the app ----------
+
+    def open_music_folder(self) -> None:
+        """Open the music folder in File Explorer."""
+        folder = appdata.output_dir(appdata.load_settings())
+        if not folder.is_dir():
+            raise ValueError("the music folder isn't there (moved, or on a drive that's unplugged?)")
+        os.startfile(folder)
+
+    def show_song(self, song_id: int) -> None:
+        """Open File Explorer at one song's file, selected."""
+        path = _logged("finding a song's file", appdata.song_file, song_id)
+        if not path.is_file():
+            raise ValueError("that song's file isn't there any more")
+        subprocess.Popen(["explorer", "/select,", str(path)])
+
+    def open_doc(self, name: str) -> None:
+        """The read me or the third-party notices (both in the pipeline folder of a release)."""
+        docs = {"readme": [PIPELINE / "READ ME.txt", PIPELINE.parent / "README.md"],
+                "notices": [PIPELINE / "THIRD-PARTY-NOTICES.txt"]}
+        found = next((p for p in docs.get(name, []) if p.is_file()), None)
+        if not found:
+            raise ValueError("that file only comes with the release download")
+        os.startfile(found)
+
     def refile_status(self) -> dict:
         return self._refile.status()
 
@@ -230,6 +256,8 @@ def main() -> None:
     if "--debug-port" in args:
         port = int(args[args.index("--debug-port") + 1])
         os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"--remote-debugging-port={port}"
+    for problem in installdir.tidy():   # music_library + playlists.txt in place, pipeline hidden
+        log.warning(problem)
     url = f"http://127.0.0.1:{serve_ui()}/index.html?desktop"
     log.info("serving %s", url)
     webview.create_window("phoenixmp3", url, js_api=Api(), width=1280, height=820, min_size=(900, 600),

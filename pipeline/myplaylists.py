@@ -1,5 +1,5 @@
 # My Playlists for the new app window (app.pyw): the YouTube playlists saved in
-# playlists.txt (next to the pipeline folder), the same file the classic window and
+# playlists.txt (in the pipeline folder; installdir.py moves an older one there), the same file the classic window and
 # its "Add or remove My Playlists" button use. One link per line; a short "# Name"
 # comment right above a link is its name. Adding appends "# Name" + the link, removing
 # takes out the link and its name line, and every other line (your own comments, the
@@ -9,8 +9,8 @@ import threading
 from pathlib import Path
 
 import gui
+import installdir
 
-PLAYLISTS = gui.PLAYLISTS
 MAX_NAME = 40
 THUMBS = 4
 _lock = threading.Lock()
@@ -26,7 +26,7 @@ def _label(line: str) -> str | None:
 
 def _lines() -> list[str]:
     try:
-        return PLAYLISTS.read_text(encoding="utf-8-sig").splitlines()
+        return installdir.playlists_file().read_text(encoding="utf-8-sig").splitlines()
     except FileNotFoundError:
         return []
 
@@ -48,9 +48,10 @@ def read() -> list[dict]:
 
 
 def _write(lines: list[str]) -> None:
-    tmp = PLAYLISTS.with_suffix(".txt.tmp")
+    f = installdir.playlists_file()
+    tmp = f.with_suffix(".txt.tmp")
     tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    os.replace(tmp, PLAYLISTS)   # all or nothing
+    os.replace(tmp, f)   # all or nothing
 
 
 def _check_url(url) -> str:

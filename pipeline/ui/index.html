@@ -564,7 +564,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       </div>
     </nav>
     <div class="side-foot">
-      <div class="nav"><a href="#prefs"><svg class="i"><use href="#i-gear"/></svg>Preferences</a></div>
+      <div class="nav"><a href="#" id="openFolder" role="button" title="Open your music folder in File Explorer"><svg class="i"><use href="#i-folder"/></svg>Music Folder</a>
+        <a href="#prefs"><svg class="i"><use href="#i-gear"/></svg>Preferences</a></div>
     </div>
   </aside>
 
@@ -641,6 +642,10 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   }
   const cover = (al, cls = "art") => al && al.cover ? h("img", { class: cls, src: al.cover, alt: "", loading: "lazy" }) : placeholder(al ? al.name : "?", cls + " art-ph");
   let toastTimer;
+  function openMusicFolder() {   // sidebar "Music Folder" and Preferences > Music folder > Open
+    if (!IN_APP) { toast(`Would open the ${L ? L.folder : "music"} folder`); return; }
+    apiReady.then(() => window.pywebview.api.open_music_folder()).catch(e => toast(`Couldn't open it (${errText(e)})`));
+  }
   function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2600); }
 
   // ---------- derived library ----------
@@ -776,7 +781,9 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
         h("p", { class: "meta" }, [al.genre || "No genre", al.year, isSingle ? "Single" : null].filter(Boolean).join(" · ")),
         h("p", { class: "note" }, `${plural(songs.length, "song")}, ${Math.round(total / 60)} min · ${songs[0].ext.toUpperCase()}`),
         h("div", { class: "row" },
-          h("button", { class: "btn", type: "button", onclick: () => toast(`Would open ${L.folder}\\${songs[0].f}`) }, icon("folder"), "Show in Folder"),
+          h("button", { class: "btn", type: "button", id: "showInFolder", onclick: () => IN_APP
+            ? window.pywebview.api.show_song(songs[0].id).catch(e => toast(`Couldn't show it (${errText(e)})`))
+            : toast(`Would open ${L.folder}\\${songs[0].f}`) }, icon("folder"), "Show in Folder"),
           h("button", { class: "btn", type: "button", onclick: () => toast("Would re-pick this album's genre with your current genre settings") }, icon("refresh"), "Re-file Genre")),
         isSingle ? null : getRest(al, songs.length, tickets))));
     frag.append(h("table", { class: "tbl" },
@@ -2052,6 +2059,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
               oninput: e => { pauseOut.textContent = pauseText(+e.target.value); }, onchange: e => save({ pause: +e.target.value }).catch(() => {}) }), pauseOut)))),
         h("div", { class: "group" }, h("h3", {}, "Library"), h("div", { class: "card" },
           pref("Music folder", "Where finished songs go. Changing it doesn't move songs you already have.", h("div", { class: "row" }, folder, defaultBtn,
+            h("button", { class: "btn", type: "button", onclick: openMusicFolder }, icon("folder"), "Open"),
             h("button", { class: "btn", type: "button", id: "chooseFolder", onclick: () => window.pywebview.api.choose_folder()
               .then(n => { if (n) { showFolder(n); toast("Music folder changed"); } }, e => toast(`Couldn't change it (${errText(e)})`)) }, "Change…"))),
           h("div", { class: "pref" }, h("div", {}, h("b", {}, "Folder layout"), h("small", {}, "Example: ", example)), seg("layout", { flat: "One folder", folders: "Artist / Album" }, showEx)),
@@ -2065,7 +2073,11 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
           pref("Re-file my library", "Apply the genre settings in use to songs you already have.", h("button", { class: "btn", type: "button", onclick: () => confirmRow.hidden = false }, icon("refresh"), "Re-file…")),
           confirmRow)),
         h("div", { class: "group" }, h("h3", {}, "Appearance"), h("div", { class: "card" },
-          pref("Theme", "Dark unless you pick another. System follows Windows.", themeSeg(t => window.pywebview.api.set_theme(t).catch(e => toast(`Couldn't save the theme (${errText(e)})`))))))));
+          pref("Theme", "Dark unless you pick another. System follows Windows.", themeSeg(t => window.pywebview.api.set_theme(t).catch(e => toast(`Couldn't save the theme (${errText(e)})`)))))),
+        h("div", { class: "group" }, h("h3", {}, "About"), h("div", { class: "card" },
+          pref("phoenixmp3", "How it works, and the free open source tools it's built on.", h("div", { class: "row" },
+            ...[["readme", "Read Me"], ["notices", "Licences"]].map(([doc, text]) => h("button", { class: "btn", type: "button",
+              onclick: () => window.pywebview.api.open_doc(doc).catch(e => toast(`Couldn't open it (${errText(e)})`)) }, text))))))));
   }
 
   function viewPrefs() {
@@ -2116,6 +2128,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   $("menuBtn").addEventListener("click", () => $("app").classList.toggle("open"));
   view.addEventListener("click", e => { if (e.target === view) $("app").classList.remove("open"); });
   $("sideSearch").addEventListener("submit", e => { e.preventDefault(); getState.q = $("sideQ").value; getState.pick = null; go("get"); });
+  $("openFolder").addEventListener("click", e => { e.preventDefault(); openMusicFolder(); });
   window.addEventListener("hashchange", route);
   route();
   Promise.all([load("data"), fetchJSON("demo.json")]).then(([d, demo]) => {

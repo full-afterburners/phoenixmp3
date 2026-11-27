@@ -1,6 +1,6 @@
 # beets config. Paths are relative to this folder. The app overrides directory,
 # paths and plugins from its settings (see run-config.yaml).
-directory: ../downloadswithmeta
+directory: ../music_library
 library: library.db
 
 # Older iPods can't read ID3v2.4.

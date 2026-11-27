@@ -14,14 +14,16 @@ Before you unzip it, right-click the zip, go to Properties and tick "Unblock" at
 bottom. Otherwise Windows complains about every file. Then right-click it again,
 choose Extract All, and put the folder wherever you want to keep it.
 
-Open the folder and double-click phoenixmp3.
+Open the folder and double-click phoenixmp3. That folder only shows phoenixmp3 and
+music_library, where your songs go. The app itself lives in a hidden pipeline folder.
 
 ## Using it
 
 Go to Get Music and search for an album, song or artist, or paste a YouTube link.
 Pick the album (and the edition, if there's more than one), tick the songs you want and
 hit Download. Click an artist's name to see their profile with all their albums. You can
-watch it work in Activity. Your songs go into the downloadswithmeta folder.
+watch it work in Activity. Your songs go into the music_library folder: Music Folder at
+the bottom of the sidebar opens it, and Show in Folder on an album opens it at that album.
 
 If there are playlists you keep adding songs to, add them in My Playlists. After that,
 Update checks those playlists for new songs that have been added and downloads them.

@@ -128,11 +128,17 @@ Top folder:
 
 - `phoenixmp3.exe` starts the app with the bundled Python. It's built from
   `pipeline\launcher.cs` by `build-release.ps1`, so it isn't in git.
-- `playlists.txt` is the list of saved playlist links.
-- `downloadswithmeta\` is the default output folder.
+- `music_library\` is the default output folder (called `downloadswithmeta\` before;
+  `installdir.py` renames it once, when either window opens).
+
+Everything else is in `pipeline\`, which the app hides so the top folder is just
+the exe and the music. Show hidden items in File Explorer to see it.
 
 In `pipeline\`:
 
+- `playlists.txt` is the list of saved playlist links (it used to sit next to
+  the exe and is moved here once). `READ ME.txt` and `THIRD-PARTY-NOTICES.txt`
+  are here too in a release; Preferences > About opens them.
 - `gui.pyw` is the app.
 - `get-music.ps1` is a command line version that always uses the default settings.
 - `config.yaml` is the beets config. The app writes `run-config.yaml` from its

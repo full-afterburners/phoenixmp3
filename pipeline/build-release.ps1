@@ -36,7 +36,8 @@ $Exe = Join-Path $Root "$Safe.exe"
 & $Csc /nologo /target:winexe /optimize+ "/win32icon:$(Join-Path $Pipeline 'icon.ico')" "/out:$Exe" (Join-Path $Pipeline "launcher.cs")
 if ($LASTEXITCODE -ne 0) { throw "Building $Safe.exe failed (csc exit $LASTEXITCODE)" }
 Copy-Item $Exe $Stage
-Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "READ ME.txt")
+# The top folder is just phoenixmp3.exe and (from the first start) music_library; the rest is in pipeline
+Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "pipeline\READ ME.txt")
 
 # Only these files from pipeline\, so nothing personal gets copied.
 $Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.py",
@@ -44,7 +45,7 @@ $Code = "gui.pyw", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.
         "mbsearch.py", "findtracks.py", "presettags.py", "make_notices.py", "get-music.ps1", "config.yaml",
         "icon.ico", "README.md",
         # the new window (app.pyw) and its helpers
-        "app.pyw", "appdata.py", "appsettings.py", "genrerules.py", "musicinfo.py", "downloadrun.py",
+        "app.pyw", "appdata.py", "appsettings.py", "installdir.py", "genrerules.py", "musicinfo.py", "downloadrun.py",
         "myplaylists.py", "playlistrun.py"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
 # The window's page: index.html, the sample search data and the bundled font (not the tests).
@@ -61,7 +62,7 @@ foreach ($dir in "python", "bin", "libs", "yt-dlp-master") {
     if ($LASTEXITCODE -ge 8) { throw "Copying $dir failed (robocopy exit $LASTEXITCODE)" }
 }
 
-& $Py (Join-Path $Pipeline "make_notices.py") (Join-Path $Stage "THIRD-PARTY-NOTICES.txt")
+& $Py (Join-Path $Pipeline "make_notices.py") (Join-Path $Stage "pipeline\THIRD-PARTY-NOTICES.txt")
 
 # Check nothing personal made it in.
 $personal = "library.db", "downloaded.txt", "unavailable.txt", "replaced.txt", "settings.json", "run-config.yaml",

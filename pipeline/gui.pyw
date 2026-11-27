@@ -13,6 +13,8 @@ import urllib.parse
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog
 
+import installdir
+
 APP_NAME = "phoenixmp3"
 
 PIPELINE = Path(__file__).resolve().parent
@@ -20,14 +22,14 @@ MUSIC = PIPELINE.parent
 BIN = PIPELINE / "bin"
 LIBS = PIPELINE / "libs"
 RAW = PIPELINE / "newdownloads"
-FINAL = MUSIC / "downloadswithmeta"
+FINAL = installdir.FINAL                     # music_library (installdir.py: the old name, moving it)
 YTDLP = PIPELINE / "yt-dlp-master" / "yt_dlp" / "__main__.py"
 ICON = PIPELINE / "icon.ico"
 RUNLOG = PIPELINE / "last-run.log"
 ARCHIVE = PIPELINE / "downloaded.txt"        # yt-dlp's list of already downloaded IDs
 UNAVAILABLE = PIPELINE / "unavailable.txt"   # IDs YouTube won't serve
 REPLACED = PIPELINE / "replaced.txt"         # other uploads found for those
-PLAYLISTS = MUSIC / "playlists.txt"
+PLAYLISTS = installdir.PLAYLISTS             # where it's made; installdir.playlists_file() is where it is
 SETTINGS_FILE = PIPELINE / "settings.json"
 RUN_CONFIG = PIPELINE / "run-config.yaml"    # beets config overlay, rebuilt each run
 
@@ -78,13 +80,13 @@ _NOT_PERMANENT = ("requested format", "on this app", "not a bot")
 # folder, so moving or renaming the folder doesn't break it.
 
 def out_dir(s):
-    p = Path(s.get("output_dir") or FINAL)
+    p = Path(s.get("output_dir") or installdir.default_dir())
     return p if p.is_absolute() else MUSIC / p
 
 
 def store_dir(path):
     p = Path(path)
-    if p == FINAL:
+    if p in (FINAL, installdir.default_dir()):
         return ""
     try:
         return str(p.relative_to(MUSIC))
@@ -102,7 +104,7 @@ def load_settings():
     # Older versions saved a full path. Reset it if it's the default folder or
     # points into a folder that has since been renamed.
     p = Path(s["output_dir"]) if s["output_dir"] else None
-    if p and p.is_absolute() and (p == FINAL or (p.name == FINAL.name and not p.parent.exists())):
+    if p and p.is_absolute() and (p in (FINAL, installdir.OLD_FINAL) or (p.name in (FINAL.name, installdir.OLD_FINAL.name) and not p.parent.exists())):
         s["output_dir"] = ""
     elif p and p.is_absolute():
         s["output_dir"] = store_dir(p)
@@ -142,7 +144,7 @@ def settings_summary(s):
 
 def saved_playlists():
     try:
-        lines = PLAYLISTS.read_text(encoding="utf-8-sig").splitlines()
+        lines = installdir.playlists_file().read_text(encoding="utf-8-sig").splitlines()
     except FileNotFoundError:
         return []
     return [ln.strip().strip('"') for ln in lines
@@ -417,7 +419,7 @@ class App:
             if d:
                 out.set(str(Path(d)))
         ttk.Button(row, text="Browse...", command=browse).pack(side="left", padx=(6, 0))
-        ttk.Button(row, text="Default", command=lambda: out.set(str(FINAL))).pack(
+        ttk.Button(row, text="Default", command=lambda: out.set(str(installdir.default_dir()))).pack(
             side="left", padx=(6, 0))
         ttk.Label(body, text="Changing this doesn't move songs you've already downloaded.",
                   **hint).pack(anchor="w")
@@ -631,9 +633,10 @@ class App:
         self.pl_count.config(text=f"{plural(n, 'playlist')} saved" if n else "No playlists saved yet")
 
     def on_edit_list(self):
-        if not PLAYLISTS.exists():
-            PLAYLISTS.write_text(PLAYLISTS_TEMPLATE, encoding="utf-8")
-        os.startfile(PLAYLISTS)
+        f = installdir.playlists_file()
+        if not f.exists():
+            f.write_text(PLAYLISTS_TEMPLATE, encoding="utf-8")
+        os.startfile(f)
 
     def _playlists_or_ask(self):
         urls = saved_playlists()
@@ -1125,6 +1128,8 @@ if __name__ == "__main__":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("phoenixmp3.app")
         except Exception:
             pass
+    for problem in installdir.tidy():   # music_library + playlists.txt in place, pipeline hidden
+        runlog(f"!! {problem}")
     root = tk.Tk()
     App(root)
     root.mainloop()

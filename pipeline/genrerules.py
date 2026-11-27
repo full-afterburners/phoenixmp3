@@ -154,8 +154,12 @@ class Refile:
         with self._lock:
             if self._state["running"]:
                 raise RuntimeError("a re-file is already running")
+            # The run-config carries the music folder from settings.json (config.yaml only has the
+            # default one), so the re-file writes the files where they really are, like a download does
+            import gui
+            run_cfg = str(gui.write_run_config(gui.load_settings()))
             # Popen first: if it fails, the job must not be left marked as running forever
-            self._proc = subprocess.Popen([str(PYTHON), str(PIPELINE / "fillgenres.py"), "--refile"], cwd=PIPELINE,
+            self._proc = subprocess.Popen([str(PYTHON), str(PIPELINE / "fillgenres.py"), run_cfg, "--refile"], cwd=PIPELINE,
                                           env=child_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                           encoding="utf-8", errors="replace", creationflags=CREATE_NO_WINDOW)
             self._state = {"running": True, "done": 0, "kept": 0, "errors": [], "code": None}

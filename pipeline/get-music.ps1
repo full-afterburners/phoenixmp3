@@ -1,6 +1,6 @@
 <#
     Command line version of the app. Always uses the default settings
-    (AAC, one folder, into downloadswithmeta).
+    (AAC, one folder, into music_library).
 
         .\get-music.ps1 "<youtube link>"
 #>
@@ -16,7 +16,14 @@ $Top      = Split-Path -Parent $Pipeline
 $Bin      = Join-Path $Pipeline "bin"
 $Libs     = Join-Path $Pipeline "libs"
 $Raw      = Join-Path $Pipeline "newdownloads"
-$Final    = Join-Path $Top "downloadswithmeta"
+$Final    = Join-Path $Top "music_library"
+# An older install keeps its songs in downloadswithmeta: move it once, like the app does
+# (beets reads music_library from config.yaml, so the songs must be there)
+$Old      = Join-Path $Top "downloadswithmeta"
+if (-not (Test-Path $Final) -and (Test-Path $Old)) {
+    try { Rename-Item -LiteralPath $Old -NewName "music_library" }
+    catch { throw "Couldn't rename downloadswithmeta to music_library. Close anything playing those songs and try again." }
+}
 $YtDlp    = Join-Path $Pipeline "yt-dlp-master\yt_dlp\__main__.py"
 $Bundled  = Join-Path $Pipeline "python\python.exe"
 $Py       = if (Test-Path $Bundled) { $Bundled } else { "python" }

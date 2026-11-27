@@ -17,6 +17,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import installdir
+
 PIPELINE = Path(__file__).resolve().parent
 MUSIC = PIPELINE.parent
 CACHE = PIPELINE / "cache"
@@ -51,8 +53,22 @@ def load_settings() -> dict:
 
 
 def output_dir(settings: dict) -> Path:
-    out = Path(settings.get("output_dir") or MUSIC / "downloadswithmeta")
+    out = Path(settings.get("output_dir") or installdir.default_dir())
     return out if out.is_absolute() else MUSIC / out
+
+
+def song_file(song_id) -> Path:
+    """Where one library song's file is (Show in Folder)."""
+    if not isinstance(song_id, int) or isinstance(song_id, bool):
+        raise ValueError("bad song id")
+    if not has_library():
+        raise ValueError("there's no library yet")
+    with open_db() as db:
+        row = db.execute("select path from items where id = ?", (song_id,)).fetchone()
+    if not row:
+        raise ValueError("that song isn't in the library any more")
+    p = Path(as_text(row[0]))
+    return p if p.is_absolute() else output_dir(load_settings()) / p
 
 
 def open_db() -> sqlite3.Connection:
