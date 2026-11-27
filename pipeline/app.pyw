@@ -19,6 +19,8 @@ BIN = PIPELINE / "bin"
 UI = PIPELINE / "ui"
 LOG = PIPELINE / "app.log"
 UI_PORT = 47613   # arbitrary, out of the common ranges
+NOW_PLAYING = PIPELINE / "cache" / "now-playing.m3u8"   # an album handed to the music player
+MAX_PLAY = 500
 
 # Same environment the pipeline steps get (see child_env in core.py), set before beets is imported.
 sys.path[:0] = [str(LIBS), str(PIPELINE)]
@@ -173,6 +175,32 @@ class Api:
         if not path.is_file():
             raise ValueError("that song's file isn't there any more")
         subprocess.Popen(["explorer", "/select,", str(path)])
+
+    def play(self, song_ids: list) -> int:
+        """Play library songs in whatever Windows opens them with (VLC, Media Player...). One song
+        opens as itself; several (an album) go into a temporary .m3u8 so the player queues them
+        in order. Only ids from the library: the page never sends a path. Returns how many."""
+        if not isinstance(song_ids, list) or not 1 <= len(song_ids) <= MAX_PLAY:
+            raise ValueError("bad song list")
+        if not all(isinstance(i, int) and not isinstance(i, bool) for i in song_ids):
+            raise ValueError("bad song id")
+        paths = []
+        for i in song_ids:   # a song removed since the page loaded is skipped, not the whole album
+            try:
+                p = appdata.song_file(i)
+            except ValueError:
+                continue
+            if p.is_file():
+                paths.append(p)
+        if not paths:
+            raise ValueError("that song's file isn't there any more" if len(song_ids) == 1 else "those songs' files aren't there any more")
+        if len(paths) == 1:
+            os.startfile(paths[0])
+            return 1
+        NOW_PLAYING.parent.mkdir(exist_ok=True)
+        NOW_PLAYING.write_text("#EXTM3U\n" + "".join(f"{p}\n" for p in paths), encoding="utf-8")
+        os.startfile(NOW_PLAYING)
+        return len(paths)
 
     def open_doc(self, name: str) -> None:
         """The read me or the third-party notices (both in the pipeline folder of a release)."""

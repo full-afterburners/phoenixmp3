@@ -109,6 +109,9 @@ what the steps share with the window is in `core.py`.)
 - Preferences (`appsettings.py`) go through `core.py`'s
   `load_settings()`/`save_settings()` into settings.json.
   The theme is kept in `app-prefs.json`.
+- Double-clicking a song (or its play button) opens it in whatever Windows
+  plays that file type with; Play on an album opens the album as a temporary
+  playlist (`cache/now-playing.m3u8`) so the player queues it.
 - The page uses Inter from `ui/fonts/` (SIL Open Font License), so the app
   makes no request to Google Fonts. A fresh install with no `library.db` yet
   opens to an empty library.

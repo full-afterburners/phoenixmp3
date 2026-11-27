@@ -175,6 +175,15 @@ try {
     await new Promise(r => setTimeout(r, 1500));
     check("an album you have all of shows no Get the Rest", await js(`!document.getElementById('getRest') || document.getElementById('getRest').hidden`),
       await js(`document.querySelector('.album-hero h1')?.textContent`));
+    // Play hands song ids to Python (faked: a real one would start your music player)
+    await js(`window.__realPlay = window.pywebview.api.play; window.pywebview.api.play = ids => { window.__played = ids; return Promise.resolve(ids.length); }`);
+    await js(`document.getElementById('playAlbum').click()`);
+    check("Play on an album sends every song, in track order", await waitFor(`Array.isArray(window.__played) && window.__played.length === document.querySelectorAll('.tbl tbody tr').length`, 3000),
+      await js(`JSON.stringify(window.__played)`));
+    await js(`window.__played = null; document.querySelector('.tbl tbody tr td:nth-child(2)').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    check("double-clicking a song plays just that song", await waitFor(`Array.isArray(window.__played) && window.__played.length === 1`, 3000));
+    check("each song has a play button", await js(`document.querySelectorAll('.tbl tbody .playbtn').length === document.querySelectorAll('.tbl tbody tr').length`));
+    await js(`window.pywebview.api.play = window.__realPlay`);
   } else console.log("SKIP  no fully owned MusicBrainz-tagged album in this library");
 
   // ---- saving genre changes. The count is the real one (fillgenres --preview changes nothing), but
