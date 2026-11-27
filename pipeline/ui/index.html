@@ -670,7 +670,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     genreMap = new Map();
     L.songs.forEach((s, i) => { const g = s.g || "No genre"; if (!genreMap.has(g)) genreMap.set(g, []); genreMap.get(g).push(i); });
     $("nArtists").textContent = artists.length; $("nAlbums").textContent = L.albums.length; $("nSongs").textContent = L.songs.length;
-    $("navPlaylists").replaceChildren(...L.playlists.map((p, i) => h("a", { href: "#playlists" }, icon("list"), p.name)));
+    drawNavPlaylists();
     setIdle();
   }
   const artistOf = name => artists.find(a => norm(a.name) === norm(name));
@@ -1954,10 +1954,17 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       const p = L.playlists.find(x => !plChecks.has(x.url));
       if (!p) { plChecking = false; return; }
       plChecks.set(p.url, "checking"); redrawCard(p);
-      window.pywebview.api.check_playlist(p.url).then(c => plChecks.set(p.url, c), e => plChecks.set(p.url, { error: errText(e) }))
+      window.pywebview.api.check_playlist(p.url).then(c => {
+        plChecks.set(p.url, c);
+        // no "# Name" of its own: show YouTube's title (Python remembers it for next time)
+        if (!p.named && c.title && p.name !== c.title) { p.name = c.title; drawNavPlaylists(); }
+      }, e => plChecks.set(p.url, { error: errText(e) }))
         .then(() => { redrawCard(p); next(); });
     };
     apiReady.then(next);
+  }
+  function drawNavPlaylists() {
+    $("navPlaylists").replaceChildren(...L.playlists.map(p => h("a", { href: "#playlists" }, icon("list"), p.name)));
   }
   function redrawCard(p) {
     const old = [...document.querySelectorAll("#plist .pcard")].find(x => x.dataset.url === p.url);

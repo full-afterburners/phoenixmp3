@@ -4,6 +4,7 @@
 # comment right above a link is its name. Adding appends "# Name" + the link, removing
 # takes out the link and its name line, and every other line (your own comments, the
 # instructions at the top) stays as it was. check() asks yt-dlp which songs are new.
+import json
 import os
 import threading
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 import gui
 import installdir
 
+TITLES = installdir.PIPELINE / "cache" / "playlist-titles.json"   # YouTube's names, for unnamed playlists
 MAX_NAME = 40
 THUMBS = 4
 _lock = threading.Lock()
@@ -31,9 +33,33 @@ def _lines() -> list[str]:
         return []
 
 
+def _titles() -> dict:
+    """YouTube's own title for each playlist, remembered from its last check."""
+    try:
+        return json.loads(TITLES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _remember_title(url: str, title: str) -> None:
+    with _lock:
+        titles = _titles()
+        if not title or titles.get(url) == title:
+            return
+        titles[url] = title
+        try:
+            TITLES.parent.mkdir(exist_ok=True)
+            tmp = TITLES.with_suffix(".tmp")
+            tmp.write_text(json.dumps(titles, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, TITLES)
+        except OSError:
+            pass   # only a nicer name; the next check tries again
+
+
 def read() -> list[dict]:
-    """[{"name", "url"}] in file order; unnamed ones are "Playlist N"."""
-    out, label = [], None
+    """[{"name", "url", "named"}] in file order. A playlist without its own "# Name" line shows
+    YouTube's title (once it has been checked), else "Playlist N"."""
+    out, label, titles = [], None, _titles()
     for line in _lines():
         s = line.strip()
         if not s or s.startswith("#"):
@@ -42,7 +68,7 @@ def read() -> list[dict]:
             label = _label(s) if s else None
         else:
             url = s.strip('"')
-            out.append({"name": label or f"Playlist {len(out) + 1}", "url": url})
+            out.append({"name": label or titles.get(url) or f"Playlist {len(out) + 1}", "url": url, "named": bool(label)})
             label = None
     return out
 
@@ -107,6 +133,7 @@ def check(url) -> dict:
     if url not in {p["url"] for p in read()}:
         raise ValueError("that playlist isn't in My Playlists")
     data = gui.App._lookup(url)   # yt-dlp, no download; raises with yt-dlp's reason
+    _remember_title(url, (data.get("title") or "").strip()[:MAX_NAME * 2])
     entries = [e for e in (data.get("entries") or [data]) if e and e.get("id")]
     have, dead, rep = gui.archived_ids(), gui.unavailable_ids(), gui.replacements()
     fresh = [e for e in entries if e["id"] not in have | dead]
