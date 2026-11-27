@@ -1034,7 +1034,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
           if ((parent || null) === own) delete gEdit.moves[g]; else gEdit.moves[g] = parent || null;
           if (parent) pickedSet().delete(g);   // off, so its songs go to the new parent
           toast(parent ? `${tc(g)} is now under ${tc(parent)}` : `${tc(g)} is now a top-level genre`);
-          st.sel = g;   // show where it went, with a way to put it back
+          st.sel = g;   // show where it went, with a way to put it back,
+          if (!chartView.open.has(g)) chartView.hidden.add(g);   // without opening its children
           render();
         },
       });
