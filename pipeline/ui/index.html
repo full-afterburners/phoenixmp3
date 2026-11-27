@@ -405,7 +405,7 @@ a.btn.primary { color: var(--accent-ink); }
 .org li::after { left: 50%; border-left: 1.5px solid var(--line); }
 .org li:only-child::before, .org li:only-child::after { display: none; }
 .org li:only-child { padding-top: 16px; }
-.org li:only-child > .ocard::before, .org li:only-child > .odrawer::before { content: ""; position: absolute; top: -16px; left: 50%; height: 16px; border-left: 1.5px solid var(--line); }
+.org li:only-child > .ocard::before, .org li:only-child > .odrawer::before, .org li:only-child > .ochip::before { content: ""; position: absolute; top: -16px; left: 50%; height: 16px; border-left: 1.5px solid var(--line); }
 .org li:first-child::before, .org li:last-child::after { border-top: 0; }
 .org li:last-child::before { border-right: 1.5px solid var(--line); border-radius: 0 6px 0 0; }
 .org li:first-child::after { border-radius: 6px 0 0 0; }
@@ -418,14 +418,27 @@ a.btn.primary { color: var(--accent-ink); }
 .ocard .nm { font-weight: 700; font-size: 12.5px; line-height: 1.15; overflow-wrap: anywhere; letter-spacing: -0.01em; }
 .ocard .ct { font-size: 11px; font-variant-numeric: tabular-nums; }
 .ocard .mv { font-size: 10.5px; font-weight: 600; color: var(--accent); }
-.ocard.on { border: 1.5px solid var(--ok); background: var(--ok-soft); color: var(--ink); }
+/* Colour: every genre takes its family's hue (--fh, from its top-level genre). On your list = solid,
+   filled more strongly the more of your songs it has (--fa); off = dashed with a hint of the hue. */
+.ocard[data-name] { border-color: hsl(var(--fh, 0) 45% 55% / .55); }
+.ocard.on { border: 1.5px solid hsl(var(--fh, 140) 65% 52%); background: hsl(var(--fh, 140) 70% 48% / var(--fa, .2)); color: var(--ink); }
 .ocard.on .ct { color: var(--ink-2); }
 .ocard.sel { outline: 2.5px solid var(--accent); outline-offset: 2px; }
-.ocard.disc { border-style: solid; background: var(--raised); color: var(--ink); }
+.ocard.disc { border-style: solid; background: hsl(var(--fh, 0) 60% 50% / .12); border-color: hsl(var(--fh, 0) 55% 55% / .8); color: var(--ink); }
 .ocard.disc .ct { color: var(--ink-2); }
 .ocard.root { width: 140px; text-align: center; align-items: center; background: var(--ink); color: var(--bg); border: 1.5px solid var(--ink); cursor: default; }
 .ocard.root .ct { color: var(--bg); opacity: .75; }
-.ocard.more { border-style: dotted; align-items: center; text-align: center; }
+/* "+16 more": the genres not shown under a parent, as a small chip; the accent badge counts the ones with your songs */
+.ochip { position: relative; display: inline-flex; align-items: center; gap: 5px; border: 1.5px dotted var(--ink-3); border-radius: 999px;
+  background: var(--sunk); color: var(--ink-2); padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.ochip:hover { color: var(--ink); border-color: var(--ink-2); }
+.ochip .yours { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 6px; font-size: 10.5px; font-weight: 700; }
+/* two rows of top-level genres: the second row hangs off a line drawn round the left of the first (linkRows) */
+.org.two-rows { position: relative; padding-left: 18px; }
+.org > li > ul.row2 { margin-top: 20px; }
+.org > li > ul.row2::before { display: none; }
+.org > svg.obypass { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.org > svg.obypass path { fill: none; stroke: var(--line); stroke-width: 1.5; }
 .ocard.drop-here { outline: 3px solid var(--accent); outline-offset: 2px; }
 .odrawer { position: relative; border: 1.5px dotted var(--ink-3); border-radius: 9px; background: var(--pane); padding: 0 6px 6px; }
 .odrawer-top { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 11px; color: var(--ink-2); }
@@ -1155,25 +1168,63 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     if (document.fonts.status === "loaded") ocardWidth = px;   // before the font is in, measure again next time
     return px;
   }
+  // A hue per genre family (its top-level genre), so a family's boxes share a colour; others get one from their name.
+  const FAMILY_HUE = { rock: 4, metal: 345, punk: 18, electronic: 200, "hip hop": 45, pop: 318, folk: 95, country: 30, jazz: 268,
+    blues: 222, "r&b": 285, soul: 300, reggae: 130, latin: 24, classical: 52, soundtrack: 175, world: 160, ambient: 190, funk: 330 };
+  function familyHue(n) {
+    const top = chainOf(n).at(-1) || n;
+    if (top in FAMILY_HUE) return FAMILY_HUE[top];
+    let hue = 0; for (const ch of top) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
+    return hue;
+  }
+  // Songs filed under a genre (what the "Your genres" list counts), as opposed to countOf: songs tagged with it or below it
+  const filedCount = n => { for (const [g, songs] of genreMap) if (g.toLowerCase() === n) return songs.length; return 0; };
+  // The chart's own choices, kept in this browser: one or two rows of top-level genres, empty genres hidden or not
+  const chartPrefs = (() => { try { return { rows: 2, hideEmpty: true, ...JSON.parse(localStorage.getItem("phx-chart") || "{}") }; } catch (e) { return { rows: 2, hideEmpty: true }; } })();
+  const saveChartPrefs = () => { try { localStorage.setItem("phx-chart", JSON.stringify(chartPrefs)); } catch (e) {} };
+  // Two rows: CSS draws each row's own lines; this adds the one that joins row 2 to the root, round the left
+  // of row 1 so it never crosses a box. Positions are measured, then divided by the zoom the drawing is in.
+  function linkRows(org) {
+    org.querySelector(":scope > svg.obypass")?.remove();
+    const r1 = org.querySelector(":scope > li > ul.row1"), r2 = org.querySelector(":scope > li > ul.row2");
+    if (!r1 || !r2 || !r1.firstElementChild || !r2.firstElementChild) return;
+    const z = chartView.zoom * ZOOM_BASE, ob = org.getBoundingClientRect();
+    const box = el => { const b = el.getBoundingClientRect(); return { l: (b.left - ob.left) / z, t: (b.top - ob.top) / z, cx: ((b.left + b.right) / 2 - ob.left) / z }; };
+    const a = box(r1.firstElementChild), b = box(r2.firstElementChild);
+    const x0 = Math.min(a.l, b.l) - 8, rad = 6;
+    const d = `M ${a.cx} ${a.t} H ${x0 + rad} Q ${x0} ${a.t} ${x0} ${a.t + rad} V ${b.t - rad} Q ${x0} ${b.t} ${x0 + rad} ${b.t} H ${b.cx}`;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "obypass"); svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d); svg.append(path); org.append(svg);
+  }
   function orgChart(o) {
     const picked = pickedSet();
     const isMoved = n => Object.prototype.hasOwnProperty.call(gEdit.moves, n);
     // Shown as boxes: genres on the list, moved ones, and (when browsing) the selected genre's
-    // line; plus everything above them. The rest of a parent's children wait in one "+N off" box.
+    // line; plus everything above them. The rest of a parent's children wait in one "+N more" chip.
+    // With "hide empty" on, genres none of your songs are tagged with join that chip too.
     const anchors = new Set([...picked, ...Object.keys(gEdit.moves), ...(o.sel ? chainOf(o.sel) : [])].filter(n => G.nodes[n]));
     const above = new Set(); anchors.forEach(a => chainOf(a).slice(1).forEach(p => above.add(p)));
-    const shows = n => anchors.has(n) || above.has(n);
+    const hidesEmpty = !o.discover && chartPrefs.hideEmpty;
+    const shows = n => (anchors.has(n) || above.has(n)) && !(hidesEmpty && !countOf(n) && n !== o.sel && !isMoved(n));
+    const maxCount = Math.max(1, ...gtops().map(countOf));
     // the library chart orders by your songs; the discovery chart by how many styles a genre has
     const size = n => { let k = 0; const walk = g => gkids(g).forEach(c => { k++; walk(c); }); walk(n); return k; };
     const byCount = o.discover ? (a, b) => size(b) - size(a) || a.localeCompare(b) : (a, b) => countOf(b) - countOf(a) || a.localeCompare(b);
 
     function card(n) {
-      const cnt = countOf(n), on = !o.discover && picked.has(n), styles = gkids(n).length;
+      const cnt = countOf(n), on = !o.discover && picked.has(n), styles = gkids(n).length, filed = on ? filedCount(n) : 0;
+      // the more of your songs, the stronger the fill (square root, so small genres still show)
+      const strength = (0.1 + 0.42 * Math.sqrt(Math.min(1, cnt / maxCount))).toFixed(2);
       const c = h("button", { class: "ocard" + (o.discover ? " disc" : on ? " on" : "") + (n === o.sel ? " sel" : "") + (isMoved(n) ? " moved" : ""), type: "button", "data-name": n,
+        style: `--fh:${familyHue(n)}; --fa:${strength}`,
         "aria-pressed": String(n === o.sel), title: `Show ${tc(n)}` + (o.canEdit ? " (drag to move it)" : "") },
         h("span", { class: "nm" }, tc(n)),
+        // on your list: songs filed here, like the "Your genres" list; off: songs carrying the tag
         o.discover ? h("span", { class: "ct" }, styles ? plural(styles, "style") : "")
-          : h("span", { class: "ct" }, cnt ? plural(cnt, "song") : "none of yours"),
+          : h("span", { class: "ct", title: filed ? "Songs filed under this genre" : cnt ? "Songs with this genre (or one below it) in their Last.fm tags" : "" },
+            filed ? plural(filed, "song") : cnt ? `${cnt} tagged` : "none of yours"),
         isMoved(n) ? h("span", { class: "mv" }, "moved") : null);
       c.addEventListener("click", () => {
         if (cdrag.done) return;
@@ -1189,9 +1240,10 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       const open = chartView.open.has(key) || (key === o.sel && !chartView.hidden.has(key));
       if (!open) {
         const withSongs = off.filter(k => countOf(k)).length;
-        return h("li", {}, h("button", { class: "ocard more", type: "button", onclick: () => { chartView.open.add(key); chartView.hidden.delete(key); o.onChange(); } },
-          h("span", { class: "nm" }, o.discover ? `+${off.length} more` : `+${off.length} off`),
-          h("span", { class: "ct" }, o.discover ? "styles" : withSongs ? `${withSongs} with your songs` : "none with your songs")));
+        return h("li", {}, h("button", { class: "ochip more", type: "button",
+          title: o.discover ? `${off.length} more styles` : `${off.length} more, off your list` + (withSongs ? `; ${withSongs} of them with your songs` : ""),
+          onclick: () => { chartView.open.add(key); chartView.hidden.delete(key); o.onChange(); } },
+          `+${off.length} more`, !o.discover && withSongs ? h("span", { class: "yours" }, withSongs) : null));
       }
       return h("li", {}, h("div", { class: "odrawer" },
         h("div", { class: "odrawer-top" }, h("button", { class: "btn small", type: "button", onclick: () => { chartView.open.delete(key); chartView.hidden.add(key); o.onChange(); } }, "Hide"),
@@ -1210,14 +1262,20 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       return li;
     }
     const tops = gtops().sort(byCount);
-    const topUl = h("ul", {});
-    tops.filter(shows).forEach(t => topUl.append(branch(t)));
-    const offTops = tops.filter(t => !shows(t));
-    if (offTops.length) topUl.append(drawer("__top", offTops));
+    const shownTops = tops.filter(shows), offTops = tops.filter(t => !shows(t));
+    // two rows (when there are enough top-level genres): the bigger half on top
+    const twoRows = chartPrefs.rows === 2 && shownTops.length > 3;
+    const split = twoRows ? Math.ceil(shownTops.length / 2) : shownTops.length;
+    const rowUls = (twoRows ? [shownTops.slice(0, split), shownTops.slice(split)] : [shownTops])
+      .map((ts, i) => h("ul", { class: twoRows ? `row${i + 1}` : "" }, ts.map(branch)));
+    if (offTops.length) rowUls.at(-1).append(drawer("__top", offTops));
     const root = o.discover
       ? h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "All music"), h("span", { class: "ct" }, plural(tops.length, "genre")))
       : h("div", { class: "ocard root", "data-root": "1" }, h("span", { class: "nm" }, "Your library"), h("span", { class: "ct" }, plural(L.songs.length, "song")));
-    const org = h("ul", { class: "org", style: `--zoom:${chartView.zoom * ZOOM_BASE}; --ow:${cardWidth()}px` }, h("li", {}, root, topUl));
+    const org = h("ul", { class: "org" + (twoRows ? " two-rows" : ""), style: `--zoom:${chartView.zoom * ZOOM_BASE}; --ow:${cardWidth()}px` }, h("li", {}, root, ...rowUls));
+    if (twoRows) {   // the joining line follows the layout: drawn once it's laid out, again whenever its size changes
+      new ResizeObserver(() => linkRows(org)).observe(org);
+    }
     const chart = h("div", { class: "ochart" + (o.canEdit ? " can-edit" : "") }, org);
     chart.addEventListener("pointerdown", e => {   // drag empty space to pan
       if (e.button !== 0 || e.target.closest("button")) return;
@@ -1232,11 +1290,22 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const zv = h("output", {}, Math.round(chartView.zoom * 100) + "%");
     const setZoom = z => { chartView.zoom = Math.min(1.6, Math.max(0.35, Math.round(z * 100) / 100)); org.style.setProperty("--zoom", chartView.zoom * ZOOM_BASE); zv.textContent = Math.round(chartView.zoom * 100) + "%"; };
     const tools = h("div", { class: "row ozoom" },
-      h("span", { class: "note legend" }, o.discover ? "Click a genre to see its popular albums. Click again deeper to narrow it down." : "Green: on your list. Dashed: off, its songs go to the nearest green box above."
-        + (o.canEdit ? " Drop a box on “Your library” to make it top-level." : "")),
+      h("span", { class: "note legend", title: o.discover ? "" : "Solid boxes are on your list; the stronger the colour, the more of your songs. Dashed boxes are off: "
+          + "their songs go to the nearest solid box above. Each genre family has its own colour." + (o.canEdit ? " Drop a box on “Your library” to make it top-level." : "") },
+        o.discover ? "Click a genre to see its popular albums. Click again deeper to narrow it down." : "Solid: on your list. Dashed: off. Stronger colour: more songs."),
+      !o.discover ? h("button", { class: "btn small", type: "button", id: "hideEmpty", "aria-pressed": String(chartPrefs.hideEmpty),
+        title: "Genres none of your songs are tagged with wait in the “+N more” chips",
+        onclick: () => { chartPrefs.hideEmpty = !chartPrefs.hideEmpty; saveChartPrefs(); o.onChange(); } }, chartPrefs.hideEmpty ? "Show Empty" : "Hide Empty") : null,
+      h("div", { class: "seg", role: "group", "aria-label": "Rows of top-level genres", id: "chartRows" }, [1, 2].map(n => h("button", { type: "button", "aria-pressed": String(chartPrefs.rows === n),
+        onclick: () => { chartPrefs.rows = n; saveChartPrefs(); chartView.sx = null; o.onChange(); } }, n === 1 ? "1 Row" : "2 Rows"))),
       h("button", { class: "btn small", type: "button", "aria-label": "Zoom out", onclick: () => setZoom(chartView.zoom - 0.1) }, "−"), zv,
       h("button", { class: "btn small", type: "button", "aria-label": "Zoom in", onclick: () => setZoom(chartView.zoom + 0.1) }, "+"),
-      h("button", { class: "btn small", type: "button", onclick: () => { setZoom((chart.clientWidth - 32) / (org.getBoundingClientRect().width / (chartView.zoom * ZOOM_BASE)) / ZOOM_BASE); chart.scrollLeft = 0; } }, "Fit"));
+      h("button", { class: "btn small", type: "button", title: "Zoom so the whole chart fits", onclick: () => {
+        // the whole chart, both ways: two rows make it narrow and tall, so width alone would zoom it past the bottom
+        const b = org.getBoundingClientRect(), z = chartView.zoom * ZOOM_BASE;
+        setZoom(Math.min((chart.clientWidth - 32) / (b.width / z), (chart.clientHeight - 32) / (b.height / z)) / ZOOM_BASE);
+        chart.scrollLeft = 0; chart.scrollTop = 0;
+      } }, "Fit"));
     return h("div", { class: "ochart-wrap" }, tools, chart);
   }
 
