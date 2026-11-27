@@ -30,14 +30,25 @@ os.environ["PYTHONNOUSERSITE"] = "1"
 os.environ["PYTHONUTF8"] = "1"
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-import webview  # noqa: E402  (needs libs on sys.path)
-
-import appdata  # noqa: E402
-import genrerules  # noqa: E402
-
 logging.basicConfig(filename=LOG, filemode="w", level=logging.INFO, encoding="utf-8",
                     format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("app")
+
+
+def open_classic() -> None:
+    subprocess.Popen([str(PIPELINE / "python" / "pythonw.exe"), str(PIPELINE / "gui.pyw")], cwd=str(PIPELINE.parent))
+
+
+try:
+    import webview  # noqa: E402  (needs libs on sys.path)
+
+    import appdata  # noqa: E402
+    import genrerules  # noqa: E402
+except Exception:
+    # pythonw has no console: without this a broken install would just show nothing at all
+    log.exception("the new window's parts didn't load; opening the classic window")
+    open_classic()
+    sys.exit(1)
 
 
 class Api:
@@ -53,7 +64,7 @@ class Api:
 
     def save_genres(self, rules: dict, refile: bool) -> dict:
         """Save the genre settings; refile=True also re-files the library in the background."""
-        return _logged("saving genre settings", genrerules.save, rules, self._refile if refile is True else None)
+        return _logged("saving genre settings", genrerules.save, rules, self._refile, refile is True)
 
     def refile_status(self) -> dict:
         return self._refile.status()
@@ -75,11 +86,7 @@ class Api:
     def genre_albums(self, tag: str) -> list:
         if not isinstance(tag, str) or not tag.strip() or len(tag) > 100:
             raise ValueError("bad genre name")
-        try:
-            return appdata.genre_albums(tag.strip().lower())
-        except Exception:
-            log.exception("Last.fm albums for %s failed", tag)
-            raise
+        return _logged(f"Last.fm albums for {tag}", appdata.genre_albums, tag.strip().lower())
 
 
 def _logged(what: str, fn, *args):
@@ -93,8 +100,10 @@ def _logged(what: str, fn, *args):
         raise
 
 
-def open_classic() -> None:
-    subprocess.Popen([str(PIPELINE / "python" / "pythonw.exe"), str(PIPELINE / "gui.pyw")], cwd=str(PIPELINE.parent))
+class ExclusiveServer(http.server.ThreadingHTTPServer):
+    # Windows lets a second program bind a port marked reuse-address, so the "port taken" fallback
+    # would never happen and two windows could end up sharing one address.
+    allow_reuse_address = False
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -111,10 +120,10 @@ def serve_ui() -> int:
     preferences (localStorage) belong to its address; a random port would forget them each start."""
     handler = functools.partial(QuietHandler, directory=str(UI))
     try:
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", UI_PORT), handler)
+        server = ExclusiveServer(("127.0.0.1", UI_PORT), handler)
     except OSError:
         log.warning("port %s is taken; preferences saved in the page won't carry over this time", UI_PORT)
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server = ExclusiveServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server.server_address[1]
 

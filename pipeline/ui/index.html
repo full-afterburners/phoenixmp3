@@ -600,7 +600,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     const fn = VIEWS[name] || viewRecent;
     document.querySelectorAll(".nav a").forEach(a => {
       const target = a.getAttribute("href").slice(1);
-      const match = target === name || (name === "album" && target === "albums") || (name === "artist" && target === "artists") || (name === "genre" && target === "genres");
+      const match = target === name || (name === "album" && target === "albums") || (name === "artist" && target === "artists") || (name === "genre" && target === "genres") || (name.startsWith("mb") && target === "get");
       a.toggleAttribute("aria-current", match); if (match) a.setAttribute("aria-current", "page");
     });
     $("app").classList.remove("open");
@@ -803,12 +803,20 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     return L.albums.find(al => norm(al.name) === t && (norm(al.artist).includes(a) || a.includes(norm(al.artist)) || !a)) ||
       L.albums.find(al => norm(al.name) === t);
   }
+  // The app's genre tree names songs by library id (the library may have changed since it was read);
+  // the page works with positions in L.songs. Songs it doesn't have (deleted meanwhile) are dropped.
+  function songIdsToPositions(d) {
+    if (d.by !== "id") return d;
+    const pos = new Map(L.songs.map((s, i) => [s.id, i]));
+    Object.values(d.nodes).forEach(n => { n.lib = n.lib.map(id => pos.get(id)).filter(i => i !== undefined); });
+    return d;
+  }
   function loadGenres(box, back) {
     box.append(h("div", { class: "empty" }, "Loading the genre tree…"));
     if (!gLoading) {
       gLoading = true;
       load("genres")
-        .then(d => { G = d; if ((location.hash || "").startsWith("#" + back)) route(); })
+        .then(d => { G = songIdsToPositions(d); if ((location.hash || "").startsWith("#" + back)) route(); })
         .catch(err => { gLoading = false; box.replaceChildren(h("div", { class: "empty" }, `Couldn't load the genre tree (${errText(err)}).`)); });
     }
     return box;
@@ -1075,7 +1083,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       if (st.running) {
         $("lcdTitle").textContent = "Re-filing genres";
         $("lcdSub").textContent = `${st.done} of ${plural(total, "song")}`;
-        $("lcdBar").style.width = Math.min(100, Math.round(st.done / total * 100)) + "%";
+        $("lcdBar").style.width = (total ? Math.min(100, Math.round(st.done / total * 100)) : 0) + "%";
         setTimeout(tick, 700);
         return;
       }
@@ -1507,6 +1515,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     Object.assign(prefsState, Object.fromEntries(Object.entries(d.settings || {}).filter(([k]) => k in prefsState)));
     useSavedRules();
     derive(); route();
+    // a re-file started before the page reloaded keeps running in Python: show its progress again
+    if (IN_APP) window.pywebview.api.refile_status().then(st => { if (st.running) watchRefile(); }, () => {});
   }).catch(err => { view.replaceChildren(h("div", { class: "empty" }, `Couldn't load the library (${errText(err)}).`)); });
 })();
 </script>

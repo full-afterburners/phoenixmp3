@@ -6,6 +6,7 @@
 import base64
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 import threading
@@ -28,6 +29,7 @@ ALBUMS_MAX_AGE = 30 * 24 * 3600
 TAG_FIELDS = ("lastfm_track", "lastfm_album", "lastfm_artist", "lastfm_track1", "lastfm_artist1")
 CREATE_NO_WINDOW = 0x08000000
 ALBUMS_LOCK = threading.Lock()   # the window calls in from several threads
+LIBRARY_LOCK = threading.Lock()
 
 # Genres the "Browse by Genre" tree always shows, on top of the ones on your list and
 # in your library, so there's something to explore beyond what you already have.
@@ -62,13 +64,12 @@ def as_text(value) -> str:
 
 
 def cover_for(path: Path) -> str | None:
-    """A square JPEG thumbnail of the file's embedded art as a data URI, cached by path + mtime."""
-    try:
-        stamp = path.stat().st_mtime_ns
-    except OSError:
+    """A square JPEG thumbnail of the file's embedded art as a data URI, cached by path. (Not by
+    modified time: re-filing genres rewrites every file's tags, which would redo every thumbnail.)"""
+    if not path.exists():
         return None
     COVERS.mkdir(parents=True, exist_ok=True)
-    cached = COVERS / (hashlib.sha1(f"{path}|{stamp}".encode("utf-8")).hexdigest() + ".jpg")
+    cached = COVERS / (hashlib.sha1(str(path).encode("utf-8")).hexdigest() + ".jpg")
     if not cached.exists():
         scale = f"scale={THUMB}:{THUMB}:force_original_aspect_ratio=increase,crop={THUMB}:{THUMB}"
         try:
@@ -77,7 +78,15 @@ def cover_for(path: Path) -> str | None:
                                  capture_output=True, timeout=20, creationflags=CREATE_NO_WINDOW).stdout
         except (OSError, subprocess.TimeoutExpired):
             return None
-        cached.write_bytes(jpg)   # an empty file means "no art", so it isn't retried every start
+        # Write then rename, so a crash can't leave half a picture. An empty file means "no art",
+        # so it isn't retried every start.
+        tmp = cached.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_bytes(jpg)
+        try:
+            os.replace(tmp, cached)
+        except OSError:   # Windows: someone else is writing or reading the same picture; theirs will do
+            tmp.unlink(missing_ok=True)
+            return "data:image/jpeg;base64," + base64.b64encode(jpg).decode() if jpg else None
     data = cached.read_bytes()
     return "data:image/jpeg;base64," + base64.b64encode(data).decode() if data else None
 
@@ -107,12 +116,18 @@ def read_genre_list() -> list[str]:
 
 
 def library() -> dict:
-    """Songs, albums (grouped by album artist + album, with cover art), playlists, genre list, settings."""
+    """Songs, albums (grouped by album artist + album, with cover art), playlists, genre list, settings.
+    One load at a time: a page reload during a slow first load waits, then gets the cached covers."""
+    with LIBRARY_LOCK:
+        return _library()
+
+
+def _library() -> dict:
     settings = load_settings()
     out_dir = output_dir(settings)
     with open_db() as db:
         rows = db.execute("select id, title, artist, albumartist, album, year, genres, length, added, track, path "
-                          "from items order by added").fetchall()
+                          "from items order by added, id").fetchall()
     songs, paths, groups = [], [], defaultdict(list)
     for rid, title, artist, aa, album, year, genres, length, added, track, path in rows:
         p = Path(as_text(path))
@@ -142,9 +157,9 @@ def library() -> dict:
 
 
 def song_tags() -> dict[int, set[str]]:
-    """Per song (by library order, matching library()), every Last.fm tag kept by fillgenres plus its own genres."""
+    """Per song id, every Last.fm tag kept by fillgenres plus the song's own genres."""
     with open_db() as db:
-        rows = db.execute("select id, genres from items order by added").fetchall()
+        rows = db.execute("select id, genres from items").fetchall()
         attrs = db.execute("select entity_id, key, value from item_attributes where key in (%s)"
                            % ",".join("?" * len(TAG_FIELDS)), TAG_FIELDS).fetchall()
     kept = defaultdict(set)
@@ -154,9 +169,9 @@ def song_tags() -> dict[int, set[str]]:
         except (ValueError, TypeError, AttributeError):
             continue   # a hand-edited or damaged value: just don't use it
     out = {}
-    for i, (rid, genres) in enumerate(rows):
+    for rid, genres in rows:
         own = {g.lower() for g in as_text(genres).split("\x00") if g}
-        out[i] = kept[rid] | own
+        out[rid] = kept[rid] | own
     return out
 
 
@@ -180,8 +195,11 @@ def genres() -> dict:
     for g in list(wanted):   # keep every genre's parents so the tree stays connected in both groupings
         for parents in (hist, sound):
             wanted.update(fg.ancestors(g, parents))
+    # "lib" holds song ids, not positions: the library may have changed since library() was read.
+    # The page turns them into positions in its own song list ("by": "id").
     nodes = {g: {"albums": None, "lib": sorted(i for i, ts in tags.items() if g in ts)} for g in wanted}
-    return {"top": top, "hist": {g: hist[g] for g in wanted}, "sound": {g: sound[g] for g in wanted}, "nodes": nodes}
+    return {"top": top, "hist": {g: hist[g] for g in wanted}, "sound": {g: sound[g] for g in wanted}, "nodes": nodes,
+            "by": "id"}
 
 
 def _albums_cache() -> dict:
@@ -203,7 +221,12 @@ def genre_albums(tag: str) -> list[dict]:
     q = urllib.parse.urlencode({"method": "tag.gettopalbums", "tag": tag, "api_key": plugins.LASTFM_KEY,
                                 "format": "json", "limit": ALBUMS_PER_GENRE})
     with urllib.request.urlopen("https://ws.audioscrobbler.com/2.0/?" + q, timeout=20) as r:
-        found = json.load(r).get("albums", {}).get("album", [])
+        body = json.load(r)
+    if "error" in body or "albums" not in body:   # rate limit, service down...: an error, not "no albums"
+        raise ValueError(body.get("message") or "Last.fm sent an answer without albums")
+    found = body["albums"].get("album", [])
+    if isinstance(found, dict):   # Last.fm sends a single album as an object, not a list
+        found = [found]
     albums = [{"title": a.get("name"), "artist": (a.get("artist") or {}).get("name"),
                "cover": next((i["#text"] for i in a.get("image", []) if i.get("size") == "large" and i.get("#text")), None)}
               for a in found]

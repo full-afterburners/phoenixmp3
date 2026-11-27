@@ -5,8 +5,8 @@
 # fillgenres.py --preview (kept Last.fm tags only, changes nothing) twice at once: with
 # the saved settings and with the new ones. Re-filing runs fillgenres.py --refile as a
 # background job whose progress the window polls.
-import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -24,6 +24,7 @@ SOURCES = ("track", "album", "artist")
 FAMILIES = ("history", "sound")
 MAX_NAME = 60
 CREATE_NO_WINDOW = 0x08000000
+ERROR_LINE = re.compile(r"^\w+(Error|Exception): ")   # a Python error, like gui.pyw's _only_problems()
 
 
 class RulesError(ValueError):
@@ -56,7 +57,8 @@ def current_rules() -> dict:
 
 
 def _name(value, what: str) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value) > MAX_NAME or any(c in value for c in "\r\n\t#"):
+    # isprintable() also rules out the other characters splitlines() breaks on, so a name can't become two
+    if not isinstance(value, str) or not value.strip() or len(value) > MAX_NAME or not value.isprintable() or "#" in value:
         raise RulesError(f"{what} isn't a usable genre name: {value!r}")
     return value.strip().lower()
 
@@ -106,9 +108,9 @@ def _preview(rules_dir: Path | None) -> tuple[dict, int]:
         raise RuntimeError("counting failed: " + (run.stderr.strip().splitlines() or ["no output"])[-1])
     moves, untagged = {}, 0
     for line in run.stdout.splitlines():
-        line = line.strip()
+        line = line.lstrip()   # not strip(): "genre after" can be empty, which ends the line with a tab
         if line.startswith("move: "):
-            sid, now, then = line[6:].split("\t")
+            sid, now, then = (line[6:].split("\t") + ["", ""])[:3]
             moves[int(sid)] = (now, then)
         elif line.startswith("preview: "):
             untagged = int(line.rsplit(",", 1)[1].split()[0])
@@ -144,14 +146,19 @@ class Refile:
         self._proc: subprocess.Popen | None = None
         self._state = {"running": False, "done": 0, "kept": 0, "errors": [], "code": None}
 
+    def running(self) -> bool:
+        with self._lock:
+            return self._state["running"]
+
     def start(self) -> None:
         with self._lock:
             if self._state["running"]:
                 raise RuntimeError("a re-file is already running")
-            self._state = {"running": True, "done": 0, "kept": 0, "errors": [], "code": None}
+            # Popen first: if it fails, the job must not be left marked as running forever
             self._proc = subprocess.Popen([str(PYTHON), str(PIPELINE / "fillgenres.py"), "--refile"], cwd=PIPELINE,
                                           env=child_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                           encoding="utf-8", errors="replace", creationflags=CREATE_NO_WINDOW)
+            self._state = {"running": True, "done": 0, "kept": 0, "errors": [], "code": None}
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self) -> None:
@@ -159,11 +166,13 @@ class Refile:
         for line in proc.stdout:
             line = line.strip()
             with self._lock:
-                if line.startswith("genre:") and "kept hand-set" in line:
+                song_line = line.startswith("genre:")
+                if song_line and "kept hand-set" in line:
                     self._state["kept"] += 1
-                elif line.startswith("genre:") and "couldn't write" not in line:
+                elif song_line and not line.startswith("genre: couldn't"):
                     self._state["done"] += 1
-                if "couldn't" in line or "lookup failed" in line or "Error" in line:
+                # problems only, worded the way gui.pyw's _only_problems() looks for them (not song titles)
+                if line.startswith(("genre: couldn't", "lookup failed", "Traceback")) or ERROR_LINE.match(line):
                     self._state["errors"] = (self._state["errors"] + [line])[-5:]
         code = proc.wait()
         with self._lock:
@@ -174,10 +183,17 @@ class Refile:
             return {**self._state, "errors": list(self._state["errors"])}
 
 
-def save(rules, refile_job: Refile | None = None) -> dict:
-    """Save the settings; with a Refile job, also start re-filing the library with them."""
+SAVE_LOCK = threading.Lock()   # one save at a time: the two files are written as a pair
+
+
+def save(rules, refile_job: Refile, refile: bool = False) -> dict:
+    """Save the settings; with refile=True, also start re-filing the library with them.
+    Refuses while a re-file is running: it loaded the old settings and would mix the two."""
     rules = clean_rules(rules)
-    write_rules(PIPELINE, rules)
-    if refile_job is not None:
-        refile_job.start()
+    with SAVE_LOCK:
+        if refile_job.running():
+            raise RulesError("genres are still being re-filed; save again when that's finished")
+        write_rules(PIPELINE, rules)
+        if refile:
+            refile_job.start()
     return current_rules()
