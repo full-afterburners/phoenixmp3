@@ -20,7 +20,9 @@
 #    library (lastfm_* fields), so genres can be re-filed with new settings
 #    without asking Last.fm again. New songs come first; songs that already
 #    have a genre get theirs kept 100 per run afterwards ("tags:" lines). Lists
-#    are fetched again if the song's artist, title or album changes. If Last.fm
+#    are fetched again if the song's artist, title or album changes, and, for a
+#    song they gave no genre, once they're 30 days old (until then that song is
+#    re-checked quietly from the kept lists, without a "none found" line). If Last.fm
 #    can't be reached nothing is saved and the song is tried again next run;
 #    after 5 failures in a row the step stops and exits with an error.
 #  - --refile re-picks the genre of songs that already have one, from the kept
@@ -215,6 +217,7 @@ KEY_FIELD = "lastfm_key"           # artist/title/album they were fetched for
 FILED_FIELD = "genre_filed"        # the genre this script chose, to tell it from hand-set ones
 BACKFILL_PER_RUN = 100             # already-sorted songs whose tags are kept per run
 MAX_FAILS = 5                      # lookups failing in a row before giving up (offline)
+RETRY_DAYS = 30                    # a song Last.fm had no genre for is asked about again after this
 
 
 def first_artist(artist: str) -> str | None:
@@ -233,6 +236,15 @@ def stored_tags(item) -> dict | None:
     if FETCHED_FIELD not in item or item.get(KEY_FIELD) != tag_key(item):
         return None
     return {kind: json.loads(item[field]) for kind, field in TAG_FIELDS.items() if field in item}
+
+
+def stale(item) -> bool:
+    """The kept tag lists are older than RETRY_DAYS (or undated)."""
+    try:
+        fetched = datetime.date.fromisoformat(item.get(FETCHED_FIELD) or "")
+    except ValueError:
+        return True
+    return (datetime.date.today() - fetched).days >= RETRY_DAYS
 
 
 def store_tags(item, tags: dict) -> None:
@@ -269,6 +281,7 @@ class GenreLookup:
         self.cache: dict[tuple, list[str]] = {}
         self.serving: dict = {}
         self.fails = 0
+        self.fetched = False
         self.client.fetch_genres = self._fetch_genres_strict
         self.client.fetch = self._serve
 
@@ -301,12 +314,16 @@ class GenreLookup:
             tags["artist1"] = self._get("artist", solo)
         return tags
 
-    def tags_for(self, item, pretend: bool) -> dict | None:
+    def tags_for(self, item, pretend: bool, retry_stale: bool = False) -> dict | None:
         """Kept tags, or freshly fetched (and kept) ones; None if Last.fm couldn't
-        be reached. Stops the whole step after MAX_FAILS failures in a row."""
+        be reached. retry_stale fetches again when the kept ones are older than
+        RETRY_DAYS. self.fetched tells whether Last.fm was asked this time.
+        Stops the whole step after MAX_FAILS failures in a row."""
+        self.fetched = False
         tags = stored_tags(item)
-        if tags is not None:
+        if tags is not None and not (retry_stale and stale(item)):
             return tags
+        self.fetched = True
         try:
             tags = self.fetch_all(item)
         except LookupFailed as e:
@@ -369,8 +386,11 @@ def parse_args(argv: list[str]) -> Args:
     return Args(run_config=rest[0] if rest else None, **opts)
 
 
-def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str], ok: set, pretend: bool) -> list[str]:
-    """Pick the song's genre from its tags, report it, and write it to the file. Returns the genres picked."""
+def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str], ok: set, pretend: bool,
+               quiet: bool = False) -> list[str]:
+    """Pick the song's genre from its tags, report it, and write it to the file. Returns the genres picked.
+    quiet: say nothing when Last.fm still has nothing and the song stays as it is (an old
+    "none found" repeated every run would fill the log and count as a finished song)."""
     name = f"{item.artist} - {item.title}"
     genres = lookup.genre(item, tags, ok)
     found = bool(genres)
@@ -381,7 +401,8 @@ def file_genre(plugin, lookup: GenreLookup, item, tags: dict, current: list[str]
         note = f"none found, kept {genres[0]}" if genres else "none found"
         if genres and genres != current[:1]:
             note = f"none found, {current[0]} -> {genres[0]}"
-        print(f"  genre: {name}: {note}", flush=True)
+        if not (quiet and genres == current):
+            print(f"  genre: {name}: {note}", flush=True)
     if pretend:
         return genres
     if genres == current:
@@ -444,9 +465,12 @@ def main():
                 changes += 1
                 print(f"  move: {item.id}\t{current[0] if current else ''}\t{picked[0] if picked else ''}", flush=True)
             continue
-        tags = lookup.tags_for(item, args.pretend)
+        # A song without a listed genre: its kept tags gave none before. Ask Last.fm again
+        # once they're RETRY_DAYS old; until then, re-check quietly from the kept ones.
+        retry = not listed and not args.refile
+        tags = lookup.tags_for(item, args.pretend, retry_stale=retry)
         if tags is not None:
-            file_genre(plugin, lookup, item, tags, current, ok, args.pretend)
+            file_genre(plugin, lookup, item, tags, current, ok, args.pretend, quiet=retry and not lookup.fetched)
     if args.preview:
         print(f"preview: {changes} would change, {checked} checked, {untagged} without kept tags", flush=True)
     if backfill and not args.pretend:
