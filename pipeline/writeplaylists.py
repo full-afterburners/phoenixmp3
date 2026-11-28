@@ -5,6 +5,8 @@
 # playlists.json comes from the app: [{"title": ..., "ids": [video ids]}].
 # Songs are matched to files by the YouTube link yt-dlp stores in their tags.
 # Paths are relative so the playlists still work after copying to a player.
+# relink() is used by fillalbums.py: when a song file is moved or renamed, every
+# .m3u8 line pointing at it is updated.
 import json
 import os
 import re
@@ -39,6 +41,32 @@ def video_id(item, path):
 def safe_name(title):
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", title).strip(" .")
     return name or "Playlist"
+
+
+def relink(moves: dict, out_root: Path) -> int:
+    """After songs were moved or renamed ({old path: new path}), point the lines of every .m3u8 in
+    <out_root>/Playlists at the new paths, so a playlist this app wrote (or one pasted once, which
+    nothing rewrites) never loses a song. Returns how many lines changed."""
+    pl_dir = out_root / "Playlists"
+    if not moves or not pl_dir.is_dir():
+        return 0
+    moved = {os.path.normcase(os.path.abspath(o)): Path(n) for o, n in moves.items()}
+    changed = 0
+    for m3u in pl_dir.glob("*.m3u8"):
+        lines = m3u.read_text(encoding="utf-8-sig").splitlines()
+        out = []
+        for ln in lines:
+            if ln and not ln.startswith("#"):
+                new = moved.get(os.path.normcase(os.path.abspath(pl_dir / ln)))
+                if new:
+                    ln = Path(os.path.relpath(new, pl_dir)).as_posix()
+                    changed += 1
+            out.append(ln)
+        if out != lines:
+            tmp = m3u.with_suffix(".m3u8.tmp")
+            tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+            os.replace(tmp, m3u)
+    return changed
 
 
 def main():

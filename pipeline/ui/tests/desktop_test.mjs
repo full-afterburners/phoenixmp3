@@ -243,6 +243,19 @@ try {
   if (nLists) check("the first playlist gets checked for new songs", await waitFor(`!/Checking/.test(document.querySelector('#plist .pcard .chip').textContent)`, 90000),
     await js(`document.querySelector('#plist .pcard').innerText.split(String.fromCharCode(10)).join(' | ')`));
 
+  check("the sidebar's My Playlists link opens this page", await js(`(() => { const a = document.querySelector('#nav > div:first-child a[href="#playlists"]'); return !!a && a.getAttribute('aria-current') === 'page'; })()`));
+
+  // A MusicBrainz album page counts what you have; tracks filed under another album say where
+  const rg = await js(`window.pywebview.api.search('albums', 'Norman Fucking Rockwell', 'Lana Del Rey').then(r => (Array.isArray(r) ? r : r.results || []).find(x => /norman/i.test(x.title))?.id || '')`);
+  if (rg) {
+    await js(`location.hash = 'mbalbum-${rg}'`);
+    check("album page shows what's in your library", await waitFor(`!!document.getElementById('albumHave')`, 30000),
+      await js(`document.getElementById('albumHave')?.textContent || document.getElementById('view').innerText.slice(0, 120)`));
+    const elsewhere = await js(`[...document.querySelectorAll('#albumPage .chip')].filter(c => / on /.test(c.textContent)).length`);
+    check("tracks on another album say where (none for NFR after the studio fix)", /\\bfiled under another album\\b/.test(await js(`document.getElementById('albumHave').textContent`)) === elsewhere > 0,
+      `${elsewhere} elsewhere`);
+  } else console.log("SKIP  couldn't find the album on MusicBrainz");
+
   // preferences survive a restart: the theme comes back from Python even if WebView2 lost the page's copy
   await js(`window.pywebview.api.set_theme('light').then(() => localStorage.removeItem('phx-theme'))`);
   ws.close(); await stop(app); await sleep(1000);

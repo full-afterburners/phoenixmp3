@@ -590,6 +590,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
       <div>
         <a href="#get"><svg class="i"><use href="#i-get"/></svg>Get Music</a>
         <a href="#activity"><svg class="i"><use href="#i-pulse"/></svg>Activity<span class="dot" id="actDot" hidden></span></a>
+        <a href="#playlists" title="Add, remove and update the YouTube playlists phoenixmp3 keeps in sync"><svg class="i"><use href="#i-list"/></svg>My Playlists</a>
       </div>
       <div>
         <h4>Library</h4>
@@ -1646,10 +1647,11 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   }
   // "Summertime (feat. Louis Armstrong)" in the library is "Summertime" on MusicBrainz
   const songTitle = t => norm((t || "").replace(/\s*[([](feat|ft|featuring|with)\.?\s[^)\]]*[)\]]/gi, ""));
-  function libHas(title, artistId, names) {   // a song with this title by this artist is in the library
+  function libSongs(title, artistId, names) {   // library songs with this title by this artist
     const t = songTitle(title), ns = (names || []).map(norm).filter(Boolean);
-    return L.songs.some(s => songTitle(s.t) === t && ((artistId && s.aid === artistId) || ns.some(n => norm(s.a).includes(n))));
+    return L.songs.filter(s => songTitle(s.t) === t && ((artistId && s.aid === artistId) || ns.some(n => norm(s.a).includes(n))));
   }
+  const libHas = (title, artistId, names) => libSongs(title, artistId, names).length > 0;
   function ownedBy(title, artist) {   // stricter than ownedAlbum: the artist has to match too
     const t = norm(title), a = norm(artist);
     return a ? L.albums.find(al => norm(al.name) === t && (norm(al.artist).includes(a) || a.includes(norm(al.artist)))) : null;
@@ -1778,7 +1780,11 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
   function albumPage(gid, d, cur) {
     const rel = cur.release, tracks = cur.tracks;
     const own = ownedBy(rel.title, rel.artist);
-    const have = tracks.map(t => libHas(t.title, rel.artist_id, (t.artist_names || []).concat(rel.artist_names || [rel.artist])));
+    const mine = tracks.map(t => libSongs(t.title, rel.artist_id, (t.artist_names || []).concat(rel.artist_names || [rel.artist])));
+    const have = mine.map(m => m.length > 0);
+    // a song you have, but filed under another album (a compilation, a single): it isn't downloaded again,
+    // so say where it is, or the album looks incomplete with nothing left to tick
+    const elsewhere = mine.map(m => m.length && !m.some(s => norm(s.al) === norm(rel.title)) ? m[0].al || "no album" : null);
     // the same song can be a different recording on this edition, so fall back to its title
     const focusAt = () => { const byRec = tracks.findIndex(t => t.recording_id === mbFocus.rec); return byRec >= 0 ? byRec : tracks.findIndex(t => norm(t.title) === norm(mbFocus.title)); };
     const focus = mbFocus && mbFocus.album === gid ? focusAt() : -1;
@@ -1801,9 +1807,10 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
             class: "ed", type: "button", "aria-pressed": String(e.release === rel.id),
             onclick: () => { mbEdition.set(gid, e.release); route(); } },
             editionName(e, d.editions), h("small", {}, `${e.tracks} tracks · ${e.formats.slice(0, 2).join(", ")}`))))] : null)));
-    const nHave = have.filter(Boolean).length;
+    const nHave = have.filter(Boolean).length, nElse = elsewhere.filter(Boolean).length;
     box.append(h("div", { class: "row", style: "margin-bottom:10px" },
-      nHave ? h("span", { class: "chip ok" }, icon("check"), `${nHave} in your library`) : null,
+      nHave ? h("span", { class: "chip ok", id: "albumHave" }, icon("check"), `${nHave} in your library`
+        + (nElse ? ` · ${nElse} filed under another album` : "")) : null,
       h("span", { class: "chip mute" }, `${plural(tracks.length, "track")}${total ? ` · ${Math.round(total / 60)} min` : ""}`)));
     const discs = rel.discs > 1;
     box.append(h("table", { class: "tbl" },
@@ -1814,7 +1821,8 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
         const feat = t.artist && norm(t.artist) !== norm(rel.artist) ? t.artist : null;
         return h("tr", { class: "r" + (i === focus ? " focus" : "") }, h("td", {}, cb), h("td", { class: "num" }, discs ? `${t.disc}-${t.n}` : t.n),
           h("td", {}, t.title, feat ? h("span", { class: "dim" }, " · " + feat) : null),
-          h("td", {}, have[i] ? h("span", { class: "chip ok" }, icon("check"), "In library") : null),
+          h("td", {}, have[i] ? h("span", { class: "chip ok", title: elsewhere[i] ? `You have it, filed under “${elsewhere[i]}”` : "" },
+            icon("check"), elsewhere[i] ? `In library · on ${elsewhere[i]}` : "In library") : null),
           h("td", { class: "time" }, t.length ? mins(t.length) : "–"));
       }))));
     box.append(h("div", { class: "sticky-foot" }, h("div", {}, count, h("p", { class: "note" }, "Tagged with this exact album, track numbers and year. Songs you already have are skipped.")), dlBtn));
