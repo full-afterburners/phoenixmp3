@@ -3,7 +3,8 @@
 #  1. list each saved playlist with yt-dlp; songs not in downloaded.txt or
 #     unavailable.txt are new.
 #  2. songs YouTube won't serve (unavailable.txt) get findcopy.py's search for another
-#     upload of the same song; what it finds or doesn't goes in replaced.txt, and
+#     upload of the same song (for age-restricted ones, also someone else's exact
+#     re-upload); what it finds or doesn't goes in replaced.txt, and
 #     errors aren't written so they're tried again next time.
 #  3. the playlists themselves are downloaded (yt-dlp skips what it has) plus the
 #     other uploads found.
@@ -54,7 +55,9 @@ def _swap(run, plists: list[dict], songs: dict) -> list[str]:
     """Other uploads to download for songs YouTube won't serve (the old window's _swap_work + _swap_step)."""
     ids = list(dict.fromkeys(i for pl in plists for i in pl["ids"]))
     dead, have, rep = core.unavailable_ids(), core.archived_ids(), core.replacements()
-    look = [{"id": i, **songs[i]} for i in ids if i in dead and i not in rep and songs.get(i, {}).get("title")]
+    age = core.age_restricted_ids()   # findcopy may take someone else's exact upload of these
+    look = [{"id": i, **songs[i], "age": i in age} for i in ids
+            if i in dead and i not in rep and songs.get(i, {}).get("title")]
     get = [rep[i] for i in ids if rep.get(i) and rep[i] not in have and rep[i] not in dead]
     for v in get:
         run._add_song(title=v, artist="", video=v, state="found", note="another copy of an unavailable song")

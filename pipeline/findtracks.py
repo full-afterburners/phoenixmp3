@@ -1,7 +1,7 @@
 # Finds the tracks of a MusicBrainz album or song (from mbsearch.py) on YouTube
 # Music, so they can be downloaded without pasting links.
 #
-#   python findtracks.py <tracks.json>
+#   python findtracks.py <tracks.json> [--reupload]
 #
 # tracks.json is the output of "mbsearch.py tracks" (an album: {"release", "tracks"})
 # or a list of songs: {"release": null, "tracks": [{"recording_id", "title",
@@ -18,7 +18,14 @@
 #   unsure <recording id> <video id> <artist> - <title>   MusicBrainz has no length
 #                                    for it, so only title and artist matched: ask
 #   none <recording id>              searched fine, nothing matched
+#   reupload <recording id> <video id> <artist> - <title>   every official upload is
+#                                    age-restricted (needs a sign-in); this is someone
+#                                    else's upload of it, within 2 s of the real length
+#   agegated <recording id>          age-restricted and no exact re-upload: permanent
 #   error <recording id> <reason>    blocked, offline, yt-dlp broken: try again later
+#  - --reupload: the app's tracks.json names album-playlist tracks that turned out
+#    age-restricted when downloading ("skip": that video id); only re-uploads are
+#    searched for them.
 # and before them, when an album playlist was used:
 #   playlist <playlist id> <matched>/<total>
 import json
@@ -83,6 +90,7 @@ def album_playlist(ydl, release: dict, tracks: list) -> tuple[str | None, dict]:
 
 
 def main():
+    reupload_only = "--reupload" in sys.argv[2:]
     data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     release, tracks = data.get("release"), data["tracks"]
     flat = yt_dlp.YoutubeDL({**findcopy.OPTS, "extract_flat": True})
@@ -90,7 +98,7 @@ def main():
     full = yt_dlp.YoutubeDL({**findcopy.OPTS, "simulate": True, "format": "bestaudio"})
 
     from_playlist = {}
-    if release and len(tracks) > 1:
+    if release and len(tracks) > 1 and not reupload_only:
         try:
             playlist_id, from_playlist = album_playlist(pages, release, tracks)
             if playlist_id:
@@ -110,9 +118,24 @@ def main():
         if searched:
             time.sleep(PAUSE)
         searched += 1
-        song = {"id": None, "title": track["title"], "artist": track["artist"], "duration": track.get("length")}
+        song = {"id": track.get("skip"), "title": track["title"], "artist": track["artist"], "duration": track.get("length")}
         try:
+            if reupload_only:
+                raise findcopy.AgeGated("the album's upload is age-restricted")
             info = findcopy.find(flat, full, song)
+        except findcopy.AgeGated:
+            try:
+                info = findcopy.find_reupload(flat, full, song, artist_names(track, release))
+            except Exception as e:
+                reason = " ".join(str(e).split())[:200] or type(e).__name__
+                print(f"error {key} {reason}", flush=True)
+                continue
+            if info:
+                artist = info.get("artist") or findcopy.clean_artist(info.get("channel"))
+                print(f"reupload {key} {info['id']} {artist} - {info.get('title')}", flush=True)
+            else:
+                print(f"agegated {key}", flush=True)
+            continue
         except Exception as e:
             reason = " ".join(str(e).split())[:200] or type(e).__name__
             print(f"error {key} {reason}", flush=True)

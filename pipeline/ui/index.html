@@ -1891,7 +1891,7 @@ body.dragging-box, body.dragging-box * { cursor: grabbing !important; user-selec
     queued: ["mute", "Queued"], finding: ["acc", "Searching"], found: ["acc", "Found"], unsure: ["warn", "Check match"],
     notfound: ["warn", "Not on YouTube Music"], searchfail: ["bad", "Search failed"], downloading: ["acc", "Downloading"],
     downloaded: ["acc", "Downloaded"], done: ["ok", "Done"], archived: ["mute", "Downloaded before"], failed: ["bad", "Failed"],
-    have: ["ok", "Already in library"],
+    have: ["ok", "Already in library"], agegated: ["warn", "Age-restricted"],
   };
   function runSong(s) {
     const [cls, text] = SONG_CHIP[s.state] || ["mute", s.state];

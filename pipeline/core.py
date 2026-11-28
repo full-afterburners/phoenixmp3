@@ -72,6 +72,7 @@ _PERMANENT = ("video unavailable", "video is not available", "not made this vide
               "private video", "has been removed", "copyright", "terminated",
               "confirm your age", "inappropriate", "members-only", "join this channel")
 _NOT_PERMANENT = ("requested format", "on this app", "not a bot")
+AGE_WORDS = ("confirm your age", "inappropriate for some users")   # same as findcopy.AGE_WORDS
 
 
 # Settings. The output folder is saved as "" (default) or relative to the app
@@ -157,9 +158,20 @@ def unavailable_ids():
     return {ln.split()[0] for ln in lines if ln.strip() and not ln.startswith("#")}
 
 
+def age_restricted_ids():
+    """Songs in unavailable.txt because YouTube wants a sign-in to confirm the viewer's age."""
+    try:
+        lines = UNAVAILABLE.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return set()
+    return {ln.split()[0] for ln in lines if ln.strip() and not ln.startswith("#")
+            and any(w in ln.lower() for w in AGE_WORDS)}
+
+
 def record_unavailable(log_lines):
     """Add songs that failed for a permanent reason to unavailable.txt, so they
-    don't show up as new on every playlist check."""
+    don't show up as new on every playlist check. Returns how many were added,
+    not counting age-restricted ones."""
     known = unavailable_ids() | archived_ids()
     found = {}
     for ln in log_lines:
@@ -173,7 +185,8 @@ def record_unavailable(log_lines):
         with UNAVAILABLE.open("a", encoding="utf-8") as f:
             for vid, why in found.items():
                 f.write(f"{vid}  # {why}\n")
-    return len(found)
+    # age-restricted ones are reported on their own (the window shows them per song)
+    return sum(1 for why in found.values() if not any(w in why.lower() for w in AGE_WORDS))
 
 
 def is_youtube_link(url):
@@ -203,11 +216,13 @@ def replacements():
 
 def dead_note(entries, dead):
     """"  (3 from another copy, 2 unavailable)" for a playlist summary."""
-    have, rep = archived_ids(), replacements()
+    have, rep, age = archived_ids(), replacements(), age_restricted_ids()
     ids = [e.get("id") for e in entries if e.get("id") in dead]
     swapped = sum(1 for i in ids if rep.get(i) in have)
-    gone = len(ids) - swapped
+    gated = sum(1 for i in ids if i in age and rep.get(i) not in have)
+    gone = len(ids) - swapped - gated
     parts = ([f"{swapped} from another copy"] if swapped else []) + \
+            ([f"{gated} age-restricted"] if gated else []) + \
             ([f"{gone} unavailable"] if gone else [])
     return f"  ({', '.join(parts)})" if parts else ""
 

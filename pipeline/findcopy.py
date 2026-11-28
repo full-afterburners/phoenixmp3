@@ -7,7 +7,11 @@
 # one, but the playlist still points at the old one. This searches YouTube
 # Music for the same song and only accepts a result that is by the same artist,
 # is the same version (a remix doesn't match the original) and is within 10
-# seconds of the original length. Prints one line per song:
+# seconds of the original length. A song YouTube age-restricts ("age": true from
+# the app, or every match needs a sign-in) may instead get someone else's upload
+# of the same recording: same title, version and artist, within 2 seconds of the
+# original length, and downloadable without signing in (find_reupload).
+# Prints one line per song:
 #   found <old id> <new id> <artist> - <title>
 #   none <old id>
 #   error <old id> <reason>
@@ -27,7 +31,27 @@ import yt_dlp
 
 VERSION = re.compile(r"\b(remix|mix|edit|live|acoustic|instrumental|extended|version|"
                      r"demo|cover|sped|slowed)\b[^()\[\]]*", re.I)
-OPTS = {"quiet": True, "no_warnings": True, "remote_components": ["ejs:github"]}
+class _Silent:
+    """yt-dlp prints a candidate's error even when the exception is caught here. Every failure
+    is handled (and reported on its own line), so those printouts would only confuse the window."""
+    def debug(self, msg): pass
+    def info(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): pass
+
+
+OPTS = {"quiet": True, "no_warnings": True, "remote_components": ["ejs:github"], "logger": _Silent()}
+AGE_WORDS = ("confirm your age", "inappropriate for some users")   # YouTube's age check
+REUPLOAD_RESULTS = 6   # video search results checked for a re-upload
+REUPLOAD_SECONDS = 2   # a re-upload must be this close to the real length
+
+
+class AgeGated(Exception):
+    """Every matching upload needs a YouTube sign-in to confirm the viewer's age."""
+
+
+def age_gated(err) -> bool:
+    return any(w in str(err).lower() for w in AGE_WORDS)
 
 
 def norm(s):
@@ -62,7 +86,7 @@ def find(flat, full, song):
     title, artist, length = song["title"], clean_artist(song["artist"]), song.get("duration")
     q = urllib.parse.quote(f"{artist} {title}")
     res = flat.extract_info(f"https://music.youtube.com/search?q={q}#songs", download=False)
-    failed = None
+    failed = gated = None
     for e in list((res or {}).get("entries") or [])[:3]:
         if not e or e.get("id") == song["id"]:
             continue
@@ -73,7 +97,10 @@ def find(flat, full, song):
         try:
             info = full.extract_info(f"https://www.youtube.com/watch?v={e['id']}", download=False)
         except Exception as err:
-            failed = err  # this candidate may be dead too, try the next one
+            if age_gated(err):
+                gated = err   # permanent without a sign-in: not a reason to retry later
+            else:
+                failed = err  # this candidate may be dead too, try the next one
             continue
         names = [info.get("artist"), info.get("creator"), info.get("channel"),
                  info.get("uploader"), *(info.get("artists") or [])]
@@ -85,6 +112,43 @@ def find(flat, full, song):
     if failed:
         # A title match that couldn't be checked isn't a real "no copy".
         raise failed
+    if gated:
+        raise AgeGated(str(gated))
+    return None
+
+
+def find_reupload(flat, full, song, artists=None):
+    """Someone else's upload of the same recording, for a song whose official uploads
+    YouTube won't play without a sign-in (age-restricted). Searches YouTube Music's
+    videos and only accepts one with the same title and version, the artist in its
+    title or channel, a length within REUPLOAD_SECONDS of the real one (which keeps
+    out sped-up, slowed, live and cut versions), and that downloads without signing in.
+    Needs the real length: without it nothing is accepted."""
+    length = song.get("duration")
+    if not length:
+        return None
+    title = song["title"]
+    names = [clean_artist(a) for a in (artists or [song["artist"]]) if a]
+    q = urllib.parse.quote(f"{names[0] if names else ''} {title}")
+    res = flat.extract_info(f"https://music.youtube.com/search?q={q}#videos", download=False)
+    for e in list((res or {}).get("entries") or [])[:REUPLOAD_RESULTS]:
+        if not e or e.get("id") == song.get("id"):
+            continue
+        if not same_title(title, e.get("title")) or versions(e.get("title")) != versions(title):
+            continue
+        if e.get("duration") and abs(e["duration"] - length) > REUPLOAD_SECONDS:
+            continue
+        try:
+            info = full.extract_info(f"https://www.youtube.com/watch?v={e['id']}", download=False)
+        except Exception:
+            continue   # gated or dead as well: try the next one
+        credited = [info.get("artist"), info.get("creator"), info.get("channel"), info.get("uploader"),
+                    *(info.get("artists") or [])]
+        by_artist = any(same_artist(a, n) for a in names for n in credited if n) or \
+            any(norm(a) and norm(a) in norm(info.get("title")) for a in names)
+        if not by_artist or not info.get("duration") or abs(info["duration"] - length) > REUPLOAD_SECONDS:
+            continue
+        return info
     return None
 
 
@@ -96,7 +160,12 @@ def main():
         if i:
             time.sleep(1.5)
         try:
-            info = find(flat, full, song)
+            try:
+                info = find(flat, full, song)
+            except AgeGated:
+                info, song = None, {**song, "age": True}
+            if not info and song.get("age"):   # age-restricted: someone else's upload, if one matches exactly
+                info = find_reupload(flat, full, song)
         except Exception as e:
             reason = " ".join(str(e).split())[:200] or type(e).__name__
             print(f"error {song['id']} {reason}", flush=True)

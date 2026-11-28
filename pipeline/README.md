@@ -158,6 +158,10 @@ In `pipeline\`:
 - `downloaded.txt` is yt-dlp's list of downloaded video IDs. Anything in it is
   skipped. Delete a line to download that song again.
 - `unavailable.txt` lists songs YouTube won't serve, so they don't count as new.
+  That includes age-restricted ones (YouTube wants a sign-in to confirm your age).
+  For those, album downloads and playlist updates look for someone else's upload
+  of the same recording: same title, version and artist, and within 2 seconds of
+  the real length. The window labels such songs as someone else's upload.
   Delete it to retry them.
 - `replaced.txt` lists other uploads found for those songs. Labels sometimes
   pull an upload, and YouTube Music quietly plays a different one while the

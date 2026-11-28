@@ -37,6 +37,8 @@ MAX_QUEUE = 20           # downloads waiting behind the running one
 FINISHED_KEEP = 10       # finished downloads listed in Activity
 VIDEO_ID = re.compile(r"^[0-9A-Za-z_-]{11}$")
 ID_IN_NAME = re.compile(r"\[([0-9A-Za-z_-]{11})\]")
+AGE_NOTE = "YouTube wants a sign-in to confirm your age, and no other upload matched"
+REUPLOAD_NOTE = "Someone else's upload: YouTube's own needs a sign-in to confirm your age"
 # How much of the bar each step fills
 STEPS = [("find", "Find", 0.12), ("download", "Download", 0.5), ("clean", "Clean up", 0.06),
          ("tag", "Tag", 0.14), ("albums", "Albums", 0.08), ("genres", "Genres", 0.1), ("lists", "Playlist files", 0.02)]
@@ -314,19 +316,25 @@ class DownloadRun:
             return core.only_problems(line)
         return on_line
 
-    def _find(self, job: dict) -> list[tuple[int, str]]:
-        """findtracks.py on the picked tracks that have no video yet. Returns [(track index, video id)] to download."""
-        want = [i for i, v in sorted(job["picks"].items()) if not v]
-        get = [(i, v) for i, v in sorted(job["picks"].items()) if v]
+    def _find(self, job: dict, gated: dict[int, str] | None = None) -> list[tuple[int, str]]:
+        """findtracks.py on the picked tracks that have no video yet. Returns [(track index, video id)] to download.
+        gated: {track index: video id} of tracks whose video turned out age-restricted when downloading;
+        only someone else's exact upload is searched for those (findtracks --reupload)."""
+        if gated:
+            want, get = sorted(gated), []
+        else:
+            want = [i for i, v in sorted(job["picks"].items()) if not v]
+            get = [(i, v) for i, v in sorted(job["picks"].items()) if v]
         if not want:
             self._step("find", "skipped")
             return get
         self._step("find", "active", 0, len(want))
-        self._set(now=f"Finding {core.plural(len(want), 'song')} on YouTube Music")
+        self._set(now=f"Looking for other uploads of {core.plural(len(want), 'age-restricted song')}" if gated
+                  else f"Finding {core.plural(len(want), 'song')} on YouTube Music")
         for i in want:
             self._song(lambda s, i=i: s["i"] == i, state="finding")
-        FIND_FILE.write_text(json.dumps({"release": job["release"], "tracks": [job["tracks"][i] for i in want]},
-                                        ensure_ascii=False), encoding="utf-8")
+        tracks = [{**job["tracks"][i], **({"skip": gated[i]} if gated else {})} for i in want]
+        FIND_FILE.write_text(json.dumps({"release": job["release"], "tracks": tracks}, ensure_ascii=False), encoding="utf-8")
         pending = list(want)   # findtracks answers in track order
         found: list[tuple[int, str]] = []
 
@@ -334,7 +342,7 @@ class DownloadRun:
             parts = line.split(" ", 3)
             if parts[0] == "playlist" and len(parts) > 2:
                 return f"  Found the album on YouTube Music ({parts[2]} tracks from its playlist)"
-            if parts[0] not in ("found", "unsure", "none", "error") or len(parts) < 2 or not pending:
+            if parts[0] not in ("found", "unsure", "none", "error", "reupload", "agegated") or len(parts) < 2 or not pending:
                 return core.only_problems(line)
             i = pending.pop(0)
             title = job["tracks"][i]["title"]
@@ -348,6 +356,13 @@ class DownloadRun:
             if parts[0] == "unsure" and len(parts) > 2:
                 self._song(lambda s: s["i"] == i, state="unsure", video=parts[2], note=parts[3] if len(parts) > 3 else "")
                 return f"  Check this match: {title} -> {parts[3] if len(parts) > 3 else parts[2]}"
+            if parts[0] == "reupload" and len(parts) > 2:
+                found.append((i, parts[2]))
+                self._song(lambda s: s["i"] == i, state="found", video=parts[2], note=REUPLOAD_NOTE)
+                return f"  Age-restricted on YouTube, using someone else's upload: {title} -> {parts[3] if len(parts) > 3 else parts[2]}"
+            if parts[0] == "agegated":
+                self._song(lambda s: s["i"] == i, state="agegated", note=AGE_NOTE)
+                return f"  Age-restricted on YouTube, no other upload matched: {title}"
             if parts[0] == "none":
                 self._song(lambda s: s["i"] == i, state="notfound", note="No match on YouTube Music")
                 return f"  Not found on YouTube Music: {title}"
@@ -355,11 +370,33 @@ class DownloadRun:
             self._song(lambda s: s["i"] == i, state="searchfail", note=why)
             return f"  Couldn't search for {title} ({why})"
 
-        self._stream([core.PY, str(PIPELINE / "findtracks.py"), str(FIND_FILE)], on_line)
+        self._stream([core.PY, str(PIPELINE / "findtracks.py"), str(FIND_FILE), *(["--reupload"] if gated else [])], on_line)
         for i in pending:   # findtracks stopped early (crashed): those weren't searched
             self._song(lambda s, i=i: s["i"] == i, state="searchfail", note="the search stopped early")
         self._step("find", "done")
         return sorted(get + found)
+
+    def _retry_age_gated(self, job: dict, s: dict, get: list[tuple[int, str]], yt: dict) -> list[tuple[int, str]]:
+        """Album tracks taken from YouTube Music's album playlist aren't checked before downloading, so an
+        age-restricted one only shows up as a failed download. Look for someone else's exact upload of those
+        and download what's found. Returns the album's [(track index, video id)] with the new videos in place."""
+        with self._lock:
+            gated = {x["i"]: x["video"] for x in self._state["songs"]
+                     if x["state"] == "agegated" and x.get("i") is not None and x.get("video")}
+        if not gated:
+            return get
+        used = {v for i, v in get if i not in gated}
+        more = [(i, v) for i, v in self._find(job, gated) if v not in used]
+        if not more:
+            return get
+        for i, v in more:
+            self._song(lambda x, i=i: x["i"] == i, video=v)
+        again = self._download([f"https://music.youtube.com/watch?v={v}" for _, v in more], s)
+        yt["songs"] += again["songs"]
+        yt["dead"] += again["dead"]
+        yt["blocked"] = yt["blocked"] or again["blocked"]
+        swap = dict(more)
+        return [(i, swap.get(i, v)) for i, v in get]
 
     def _one_track_per_video(self, get: list[tuple[int, str]], tracks: list[dict]) -> list[tuple[int, str]]:
         """findtracks can match one video to two tracks. A file can't be both, so only the first track
@@ -444,15 +481,18 @@ class DownloadRun:
                     if st["refused"] >= REFUSED_LIMIT:
                         st["blocked"], self._cut = True, True
                     why = "YouTube refused the download"
+                elif any(w in reason.lower() for w in core.AGE_WORDS):
+                    why = "age-restricted: YouTube wants a sign-in to confirm your age"
                 elif "unavailable" in reason.lower() or "not available" in reason.lower():
                     why = "not available on YouTube"
                 else:
                     why = reason
+                state = "agegated" if why.startswith("age-restricted") else "failed"
                 # A line naming no video is about the song in progress: never flip one that already finished
                 unfinished = ("queued", "found", "downloading")
-                if not self._song(lambda x: x["video"] == vid and (m.group(1) or x["state"] in unfinished), state="failed", note=why) \
+                if not self._song(lambda x: x["video"] == vid and (m.group(1) or x["state"] in unfinished), state=state, note=why) \
                         and m.group(1) and not known_only:
-                    self._add_song(title=vid, artist="", video=vid, state="failed", note=why)
+                    self._add_song(title=vid, artist="", video=vid, state=state, note=why)
                 return f"  Failed: {why}"
             return None
 
@@ -558,24 +598,28 @@ class DownloadRun:
                     result = "done"
                     self._set(summary="Up to date: no new songs")
                     return
+            get = []
             if job["kind"] == "album":
                 get = self._one_track_per_video(self._find(job), job["tracks"])
                 targets = [f"https://music.youtube.com/watch?v={v}" for _, v in get]
                 for i, v in get:
                     self._song(lambda x, i=i: x["i"] == i, video=v)
-                t = job["tracks"]
-                # no recording id (rare): it still downloads, beets tags it the usual way
-                preset = {"release": job["release"], "tracks": [{
-                    "video_id": v, "recording_id": t[i]["recording_id"], "title": t[i]["title"], "artist": t[i]["artist"],
-                    "disc": t[i].get("disc"), "n": t[i].get("n")} for i, v in get if t[i].get("recording_id")]}
             yt = {"songs": 0, "blocked": False, "dead": 0}
             if targets:
                 yt = self._download(targets, s, known_only=job["kind"] == "playlists")
+                if job["kind"] == "album" and not yt["blocked"]:
+                    get = self._retry_age_gated(job, s, get, yt)
                 if yt["blocked"]:
                     self._log("  YouTube is refusing downloads right now, so downloading stopped. "
                               "The songs that did download still get tagged.")
             else:
                 self._step("download", "skipped")
+            if job["kind"] == "album":
+                t = job["tracks"]
+                # no recording id (rare): it still downloads, beets tags it the usual way
+                preset = {"release": job["release"], "tracks": [{
+                    "video_id": v, "recording_id": t[i]["recording_id"], "title": t[i]["title"], "artist": t[i]["artist"],
+                    "disc": t[i].get("disc"), "n": t[i].get("n")} for i, v in get if t[i].get("recording_id")]}
             core.clean_raw()
             self._check()
             # Always, like the classic window, even with nothing new: prunelib forgets deleted songs
@@ -637,6 +681,11 @@ def _summary(yt: dict, tagged: dict | None, songs: list[dict]) -> str:
         parts.append(f"{count['archived']} downloaded before")
     if yt["dead"]:
         parts.append(f"{yt['dead']} unavailable")
+    if count["agegated"]:
+        parts.append(f"{count['agegated']} age-restricted")
+    reuploads = sum(1 for x in songs if x.get("note") == REUPLOAD_NOTE and x["state"] in ("done", "downloaded"))
+    if reuploads:
+        parts.append(f"{reuploads} from someone else's upload")
     if tagged:
         if tagged["dupes"]:
             parts.append(f"{tagged['dupes']} already in library")
