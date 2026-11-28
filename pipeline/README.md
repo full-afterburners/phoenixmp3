@@ -10,18 +10,24 @@ This is the technical side. The README in the top folder covers normal use.
 2. `squareart.py` crops the thumbnail to a square (500 px, or 300 with the smaller
    art setting).
 3. `cleantitles.py` tidies the tags, e.g. "Caamp - Moonsmoke (Official Audio)"
-   becomes "Moonsmoke". It only removes repeated artist names and things like
+   becomes "Moonsmoke", and "Simon & Garfunkel / Simon & Garfunkel" becomes one
+   name. It only removes repeated artist names and things like
    "(Official Video)", never version info like "(Live)" or "(Remix)".
 4. `prunelib.py` removes library entries for songs that were deleted by hand, so
    beets doesn't skip them as duplicates.
 5. beets fingerprints each song with fpcalc, matches it on MusicBrainz, writes the
    tags and moves it into the output folder. Songs it can't match keep YouTube's tags.
+   Our plugin `beetsplugins/versionguard.py` makes beets reject a match whose version
+   words differ from the download's ("take 2", live, remix, demo...), since a sound
+   fingerprint can't tell a recording from its alternate takes.
 6. `fixartists.py` tidies the artist of songs that kept YouTube's tags. YouTube
    Music credits songwriters as artists too, so only the first name is kept, and
    fan uploads titled "Artist - Title" get split into artist and title.
 7. `fillalbums.py` looks up each matched song on MusicBrainz. If YouTube didn't give
    an album it uses the earliest official studio album (or the single/EP), and it
-   always sets the real release year, since YouTube's year is the upload date.
+   always sets the real release year, since YouTube's year is the upload date. That is
+   the album's first release; when beets matched a copy of the recording that
+   MusicBrainz only lists on a later compilation, the album is looked up by name.
 8. `fillgenres.py` gives each song one broad genre from Last.fm, from the short
    list in `genres.txt` (the mapping is in the `lastgenre` part of `config.yaml`).
    `source` picks song, album or artist tags first; `family: sound` regroups

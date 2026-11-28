@@ -6,7 +6,9 @@
 #    the same artist that came out within a year of the single, use the album.
 #    Remixes and other versions keep their single, and later greatest-hits
 #    albums don't count.
-#  - set the year to the real release year, since YouTube's is the upload date
+#  - set the year to the real release year, since YouTube's is the upload date:
+#    the album's first release, looked up by name when beets matched a copy of the
+#    recording that MusicBrainz only lists on a later compilation
 # Each song is only looked up once.
 #
 #   python fillalbums.py [run-config.yaml]
@@ -34,6 +36,12 @@ def norm(title):
     """Album title for loose comparison, ignoring bracketed bits and punctuation."""
     t = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]", "", title or "").lower()
     return re.sub(r"[^0-9a-z]+", "", t)
+
+
+def main_title(title):
+    """An album title without its subtitle: "Brother Bear: An Original Disney Records
+    Soundtrack" -> "Brother Bear"."""
+    return re.split(r"\s*:\s+|\s+[-–—]\s+", title or "", maxsplit=1)[0]
 
 
 def plain(name):
@@ -110,6 +118,24 @@ def album_year(rec, album):
     return min(years) if years else 0
 
 
+def searched_album_year(api, artist, album):
+    """The year the album first came out, found by searching MusicBrainz for the album
+    itself. Needed when beets matched a copy of the recording that MusicBrainz only
+    lists on a later compilation (MGMT's "Kids" on a 2019 hits collection), so the
+    album the song is filed under isn't among that recording's releases."""
+    found = api.search("release-group", {"releasegroup": album, "artist": artist}, limit=10)
+    want = {norm(album), norm(main_title(album))} - {""}
+    years = []
+    for rg in found:
+        names = [n for c in rg.get("artist_credit") or []
+                 for n in (c.get("name"), (c.get("artist") or {}).get("name")) if n]
+        titles = {norm(rg.get("title")), norm(main_title(rg.get("title")))}
+        if want & titles and names and by_artist(names, artist):
+            years.append(year_of(rg.get("first_release_date")))
+    years = [y for y in years if y]
+    return min(years) if years else 0
+
+
 def main():
     config.read()
     if len(sys.argv) > 1:
@@ -142,7 +168,14 @@ def main():
                 item.album = album
 
         if first_time or notes:
-            year = album_year(rec, item.album) or year_of(rec.get("first_release_date"))
+            year = album_year(rec, item.album)
+            if not year and item.album:
+                try:
+                    year = searched_album_year(api, item.artist, item.album)
+                except Exception as e:
+                    print(f"  album: lookup failed ({e}) - {name}", flush=True)
+                    continue   # not flagged: tried again next run
+            year = year or year_of(rec.get("first_release_date"))
             if year and year != item.year:
                 notes.append(f"year {item.year or '?'} -> {year}")
                 item.year = year

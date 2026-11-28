@@ -3,7 +3,8 @@
 #   python cleantitles.py <folder>
 #
 # "Caamp - Moonsmoke (Official Audio)" by "Caamp" becomes "Moonsmoke". It also
-# drops "(Lyric Video)" and similar, " - Topic"/"VEVO" from channel names,
+# drops "(Lyric Video)" and similar, " - Topic"/"VEVO" from channel names, an
+# artist YouTube lists twice ("Simon & Garfunkel / Simon & Garfunkel"),
 # featured artists from the artist tag when the title already credits them,
 # and the month/day from yt-dlp's 20190726-style dates. It only removes things,
 # and real version info like "(Live)" or "(Remix)" is left alone.
@@ -50,6 +51,11 @@ def unfeat_artist(title, artist):
 def clean_artist(artist):
     a = re.sub(r"\s*-\s*Topic$", "", artist, flags=re.IGNORECASE)
     a = re.sub(r"\s*VEVO$", "", a)
+    # YouTube sometimes repeats the artist: "Simon & Garfunkel / Simon & Garfunkel".
+    # Only an exact repeat is collapsed; "Tyler, the Creator" or "A / B" stay as they are.
+    parts = [p for p in re.split(r"\s+/\s+|\s*;\s*|,\s+", a.strip()) if p]
+    if len(parts) > 1 and len({p.casefold() for p in parts}) == 1:
+        a = parts[0]
     return a.strip() or artist
 
 

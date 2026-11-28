@@ -20,7 +20,10 @@ paths:
 # musicbrainz has to be listed in beets 2.x, otherwise chroma finds matches but
 # nothing gets looked up and every song ends up as-is.
 # ftintitle moves "feat. X" from the artist into the title.
-plugins: musicbrainz chroma ftintitle
+# versionguard (ours, in beetsplugins/) stops matches to another version of a song
+# ("take 2", live, remix...).
+plugins: musicbrainz chroma ftintitle versionguard
+pluginpath: beetsplugins
 
 chroma:
   auto: yes

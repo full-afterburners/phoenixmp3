@@ -118,13 +118,14 @@ def save_settings(s):
 
 
 def write_run_config(s):
-    plugins = "musicbrainz chroma ftintitle" + (" replaygain" if s["replaygain"] else "")
+    plugins = "musicbrainz chroma ftintitle versionguard" + (" replaygain" if s["replaygain"] else "")
     lines = [
         "# Generated from settings.json on every run.",
         f"directory: {json.dumps(out_dir(s).as_posix())}",
         "paths:",
         f"  singleton: {json.dumps(LAYOUTS[s['layout']])}",
         f"plugins: {plugins}",
+        f"pluginpath: [{json.dumps((PIPELINE / 'beetsplugins').as_posix())}]",
     ]
     if s["replaygain"]:
         lines += ["replaygain:", "  backend: ffmpeg", "  auto: yes"]

@@ -48,6 +48,9 @@ $Code = "core.py", "squareart.py", "cleantitles.py", "fillalbums.py", "prunelib.
         "app.pyw", "appdata.py", "appsettings.py", "installdir.py", "genrerules.py", "musicinfo.py", "downloadrun.py",
         "myplaylists.py", "playlistrun.py", "updates.py"
 foreach ($f in $Code) { Copy-Item (Join-Path $Pipeline $f) (Join-Path $Stage "pipeline") }
+# Our own beets plugins (config.yaml's pluginpath)
+New-Item -ItemType Directory -Force (Join-Path $Stage "pipeline\beetsplugins") | Out-Null
+Copy-Item (Join-Path $Pipeline "beetsplugins\versionguard.py") (Join-Path $Stage "pipeline\beetsplugins")
 # The window's page: index.html, the sample search data and the bundled font (not the tests).
 $UiFiles = "ui\index.html", "ui\demo.json", "ui\fonts\inter-latin-wght-normal.woff2",
            "ui\fonts\inter-latin-ext-wght-normal.woff2", "ui\fonts\OFL.txt"
