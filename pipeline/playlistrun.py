@@ -92,6 +92,25 @@ def _swap(run, plists: list[dict], songs: dict) -> list[str]:
     return get
 
 
+def pasted_playlists(run, urls: list[str]) -> list[dict]:
+    """[{"title", "ids"}] for the YouTube playlists among pasted links, so a pasted playlist
+    gets its .m3u8 like a saved one. A playlist that can't be read is reported and skipped:
+    its songs still download."""
+    plists = []
+    for url in urls:
+        if "list=" not in url:
+            continue
+        try:
+            data = core.lookup(url)
+        except Exception as e:   # noqa: BLE001 - only the playlist file is lost, not the download
+            run._log(f"  couldn't read the playlist's track list, so no playlist file for it: {e}")
+            continue
+        ids = [e["id"] for e in data.get("entries") or [] if e and e.get("id")]
+        if ids:
+            plists.append({"title": data.get("title") or "Playlist", "ids": ids})
+    return plists
+
+
 def write_files(run, s: dict, plists: list[dict]) -> None:
     """Step 4: an .m3u8 per playlist, with other uploads in place of unavailable songs."""
     rep = core.replacements()

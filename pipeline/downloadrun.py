@@ -587,6 +587,8 @@ class DownloadRun:
             else:
                 core.start_runlog(f"New window: {job['label']}")
             preset, plists, targets = None, None, list(job.get("urls") or [])
+            if job["kind"] == "links" and s["playlist_files"]:
+                plists = playlistrun.pasted_playlists(self, targets)   # a pasted playlist gets its .m3u8 too
             if job["kind"] == "playlists":
                 plan = playlistrun.check(self, job)
                 plists, targets = plan["plists"], plan["targets"]
@@ -648,9 +650,10 @@ class DownloadRun:
 
 def _first_step(key: str, name: str, job: dict, s: dict) -> dict:
     """A step as a job starts: "Find" is "Check" for playlists, links don't search, and only
-    playlist updates write playlist files (when Preferences say so)."""
+    playlist updates and pasted playlist links write playlist files (when Preferences say so)."""
     playlists = job["kind"] == "playlists"
-    skipped = (key == "find" and job["kind"] == "links") or (key == "lists" and not (playlists and s.get("playlist_files")))
+    has_lists = playlists or (job["kind"] == "links" and any("list=" in u for u in job.get("urls") or []))
+    skipped = (key == "find" and job["kind"] == "links") or (key == "lists" and not (has_lists and s.get("playlist_files")))
     return {"key": key, "name": "Check" if key == "find" and playlists else name,
             "state": "skipped" if skipped else "waiting", "done": 0, "total": 0}
 
